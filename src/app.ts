@@ -7,11 +7,16 @@ import { analyticsApp } from './api/analytics.js';
 import { redirectApp } from './api/redirect.js';
 import { metricsApp } from './api/metrics.js';
 import { docsApp } from './api/docs.js';
+import { dashboardApp } from './views/dashboard.js';
+import { serveStatic } from '@hono/node-server/serve-static';
 
 export const app = new Hono<AppEnv>();
 
 // 1. Global Middleware Pipeline (timing, requestId, secureHeaders, cors, bodyLimit, compression, timeout)
 setupPipeline(app);
+
+// Static assets (client-side bundled components)
+app.use('/static/*', serveStatic({ root: './public', rewriteRequestPath: (p) => p.replace(/^\/static/, '') }));
 
 // 2. Health & System Metrics (/health, /metrics)
 app.route('/', metricsApp);
@@ -28,7 +33,10 @@ app.route('/', analyticsApp);
 // 6. URL Management API (/api/v1/urls, /api/v1/cache)
 app.route('/api/v1', urlApp);
 
-// 7. Hot-Path Visitor Redirection (/:shortKey)
+// 7. Interactive Hono JSX User Dashboard (/, /dashboard)
+app.route('/', dashboardApp);
+
+// 8. Hot-Path Visitor Redirection (/:shortKey)
 app.route('/', redirectApp);
 
 export type AppType = typeof app;
