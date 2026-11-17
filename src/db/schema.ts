@@ -1,11 +1,11 @@
 import { pgTable, uuid, varchar, text, boolean, timestamp, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import crypto from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
 
 export const users = pgTable('users', {
   id: uuid('id')
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+    .$defaultFn(() => uuidv7()),
   email: varchar('email', { length: 255 }).notNull().unique(),
   apiKey: varchar('api_key', { length: 64 }).notNull().unique(),
   passwordHash: text('password_hash'),
@@ -17,7 +17,7 @@ export const urls = pgTable(
   {
     id: uuid('id')
       .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
+      .$defaultFn(() => uuidv7()),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),

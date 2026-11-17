@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import crypto from 'node:crypto';
+import { etag } from 'hono/etag';
 import { eq, and } from 'drizzle-orm';
 import { db, urls } from '../db/index.js';
 import { clickhouse } from '../clickhouse/client.js';
@@ -9,12 +9,13 @@ import type { AnalyticsResponse } from '../types/models.js';
 
 export const analyticsApp = new Hono<AppEnv>();
 
-// Analytics endpoint is secured with authGuard
+// Analytics endpoint is secured with authGuard and leverages standard Hono ETag middleware
 analyticsApp.use('/api/v1/urls/:id/analytics', authGuard);
+analyticsApp.use('/api/v1/urls/:id/analytics', etag({ weak: true }));
 
 analyticsApp.get('/api/v1/urls/:id/analytics', async (c) => {
   const urlId = c.req.param('id');
-  const userId = c.get('userId' as any) as string;
+  const userId = c.get('userId');
 
   if (!urlId) {
     return c.json({ error: 'URL ID is required' }, 400);
@@ -195,19 +196,6 @@ analyticsApp.get('/api/v1/urls/:id/analytics', async (c) => {
     })),
   };
 
-  // 3. ETag generation and validation (Weak ETag for caching)
-  const contentHash = crypto
-    .createHash('sha1')
-    .update(JSON.stringify(responseData))
-    .digest('hex');
-  const etag = `W/"${contentHash}"`;
-
-  const clientEtag = c.req.header('if-none-match');
-  if (clientEtag && clientEtag === etag) {
-    return c.body(null, 304);
-  }
-
-  c.header('ETag', etag);
   c.header('Cache-Control', 'private, no-cache');
   return c.json(responseData, 200);
 });

@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { eq } from 'drizzle-orm';
 import { sign } from 'hono/jwt';
-import { setCookie, deleteCookie, getCookie } from 'hono/cookie';
+import { setCookie, deleteCookie } from 'hono/cookie';
 import crypto from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
 import { db, users } from '../db/index.js';
 import { hashPassword, verifyPassword } from '../helpers/password.js';
 import { env } from '../config/env.js';
@@ -41,9 +42,9 @@ authApp.post('/register', zValidator('json', registerSchema), async (c) => {
     return c.json({ error: 'User with this email already exists' }, 409);
   }
 
-  const userId = crypto.randomUUID();
+  const userId = uuidv7();
   const apiKey = `key_${crypto.randomBytes(24).toString('hex')}`;
-  const passwordHash = hashPassword(password);
+  const passwordHash = await hashPassword(password);
   const now = new Date();
 
   const [newUser] = await db
@@ -109,7 +110,7 @@ authApp.post('/login', zValidator('json', loginSchema), async (c) => {
     return c.json({ error: 'Invalid email or password' }, 401);
   }
 
-  const isMatch = verifyPassword(password, user.passwordHash);
+  const isMatch = await verifyPassword(password, user.passwordHash);
   if (!isMatch) {
     return c.json({ error: 'Invalid email or password' }, 401);
   }
@@ -154,7 +155,7 @@ authApp.post('/logout', (c) => {
 
 // 4. Current User Session Check
 authApp.get('/me', authGuard, async (c) => {
-  const userId = c.get('userId' as any) as string;
+  const userId = c.get('userId');
 
   const rows = await db
     .select({ id: users.id, email: users.email, apiKey: users.apiKey, createdAt: users.createdAt })

@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { eq, and, desc } from 'drizzle-orm';
 import crypto from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
 import { db, urls } from '../db/index.js';
 import { setCachedUrl, purgeCacheKey } from '../cache/redis.js';
-import { generateShortKey, isValidShortKey } from '../helpers/base62.js';
+import { generateShortKey } from '../helpers/base62.js';
 import { authGuard } from '../middleware/auth.js';
 import { linkCreateRateLimiter } from '../middleware/ratelimit.js';
 import { env } from '../config/env.js';
@@ -21,6 +22,10 @@ const createUrlSchema = z.object({
     .refine(
       (url) => url.startsWith('http://') || url.startsWith('https://'),
       'URL must start with http:// or https://'
+    )
+    .refine(
+      (url) => !/[<>"{}\\|\\^` ]/.test(url),
+      'URL contains illegal unencoded characters (characters like | must be percent-encoded as %7C per RFC 3986)'
     ),
   title: z.string().max(255).optional().default(''),
   custom_key: z
@@ -49,7 +54,7 @@ urlApp.use('/urls', authGuard);
 // 1. Create a shortened URL
 urlApp.post('/urls', linkCreateRateLimiter, zValidator('json', createUrlSchema), async (c) => {
   const { original_url, title, custom_key } = c.req.valid('json');
-  const userId = c.get('userId' as any) as string;
+  const userId = c.get('userId');
 
   let shortKey = custom_key;
 
@@ -87,7 +92,7 @@ urlApp.post('/urls', linkCreateRateLimiter, zValidator('json', createUrlSchema),
     }
   }
 
-  const newId = crypto.randomUUID();
+  const newId = uuidv7();
   const now = new Date();
 
   // Insert into PostgreSQL via Drizzle ORM
@@ -126,7 +131,7 @@ urlApp.post('/urls', linkCreateRateLimiter, zValidator('json', createUrlSchema),
 // 2. Retrieve URL metadata by ID
 urlApp.get('/urls/:id', async (c) => {
   const id = c.req.param('id');
-  const userId = c.get('userId' as any) as string;
+  const userId = c.get('userId');
 
   const rows = await db
     .select()
@@ -154,7 +159,7 @@ urlApp.get('/urls/:id', async (c) => {
 
 // 3. List URLs with pagination
 urlApp.get('/urls', async (c) => {
-  const userId = c.get('userId' as any) as string;
+  const userId = c.get('userId');
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
   const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '20', 10)));
   const offset = (page - 1) * limit;
@@ -189,7 +194,7 @@ urlApp.get('/urls', async (c) => {
 // 4. Delete URL by ID
 urlApp.delete('/urls/:id', async (c) => {
   const id = c.req.param('id');
-  const userId = c.get('userId' as any) as string;
+  const userId = c.get('userId');
 
   const rows = await db
     .delete(urls)

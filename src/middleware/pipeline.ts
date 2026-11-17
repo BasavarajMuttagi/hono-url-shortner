@@ -9,6 +9,7 @@ import { timeout } from 'hono/timeout';
 import { trimTrailingSlash } from 'hono/trailing-slash';
 import { prettyJSON } from 'hono/pretty-json';
 import { bodyLimit } from 'hono/body-limit';
+import { otelTracingMiddleware } from './otel.js';
 import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
@@ -16,7 +17,10 @@ import type { AppEnv } from '../types/env.js';
  * Attaches the standard middleware pipeline to the Hono application.
  */
 export function setupPipeline(app: Hono<AppEnv>): void {
-  // 1. Unique Request ID (UUID) attached to response headers
+  // 1. OpenTelemetry & Axiom Distributed Tracing
+  app.use('*', otelTracingMiddleware);
+
+  // 2. Unique Request ID (UUID) attached to response headers
   app.use('*', requestId());
 
   // 2. Server-Timing headers (durations for cache, db, etc.)

@@ -28,7 +28,7 @@ redis.on('error', (err) => {
 
 export async function checkRedisConnection(): Promise<boolean> {
   try {
-    if (redis.status !== 'ready') {
+    if (redis.status === 'wait') {
       await redis.connect();
     }
     const pong = await redis.ping();
@@ -52,9 +52,18 @@ export async function getCachedUrl(shortKey: string): Promise<CachedURL | null> 
       return { id: '', originalUrl: '', notFound: true };
     }
 
-    const parts = val.split('|');
-    if (parts.length >= 2) {
-      return { id: parts[0], originalUrl: parts[1], notFound: false };
+    // Modern structured JSON cache entry
+    if (val.startsWith('{')) {
+      const parsed = JSON.parse(val) as { id?: string; originalUrl?: string };
+      return { id: parsed.id || '', originalUrl: parsed.originalUrl || '', notFound: false };
+    }
+
+    // Backward-compatibility fallback
+    const firstPipe = val.indexOf('|');
+    if (firstPipe !== -1) {
+      const id = val.substring(0, firstPipe);
+      const originalUrl = val.substring(firstPipe + 1);
+      return { id, originalUrl, notFound: false };
     }
     return { id: '', originalUrl: val, notFound: false };
   } catch (err) {
@@ -64,7 +73,7 @@ export async function getCachedUrl(shortKey: string): Promise<CachedURL | null> 
 }
 
 /**
- * Sets a cached URL entry with jittered TTL.
+ * Sets a cached URL entry with jittered TTL using structured JSON serialization.
  */
 export async function setCachedUrl(
   shortKey: string,
@@ -73,7 +82,8 @@ export async function setCachedUrl(
   ttlSeconds: number = calculateJitteredTtl()
 ): Promise<void> {
   try {
-    await redis.set(`url:${shortKey}`, `${id}|${originalUrl}`, 'EX', ttlSeconds);
+    const payload = JSON.stringify({ id, originalUrl });
+    await redis.set(`url:${shortKey}`, payload, 'EX', ttlSeconds);
   } catch (err) {
     console.error(`⚠️ Redis set error for key ${shortKey}:`, err);
   }

@@ -30,6 +30,13 @@ const envSchema = z.object({
     .string()
     .min(16, 'JWT_SECRET must be at least 16 characters long')
     .default('super-secret-jwt-signing-key-for-url-shortener-2026'),
+
+  // Axiom Cloud Observability & OpenTelemetry
+  AXIOM_TOKEN: z.string().optional(),
+  AXIOM_DATASET: z.string().default('hono-url-shortner-traces'),
+  AXIOM_METRICS_DATASET: z.string().default('hono-url-shortner-development-metrics'),
+  AXIOM_URL: z.string().default('https://us-east-1.aws.edge.axiom.co'),
+  OTEL_SERVICE_NAME: z.string().default('hono-url-shortner'),
 });
 
 const parsed = envSchema.safeParse(process.env);

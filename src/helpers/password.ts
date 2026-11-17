@@ -1,23 +1,18 @@
-import crypto from 'node:crypto';
+import bcrypt from 'bcrypt';
+
+const SALT_ROUNDS = 10;
 
 /**
- * Hashes a plaintext password using Node's cryptographic scrypt algorithm.
- * Formats as `salt:derivedKeyHex`.
+ * Hashes a plaintext password using bcrypt with 10 salt rounds.
  */
-export function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const derivedKey = crypto.scryptSync(password, salt, 64);
-  return `${salt}:${derivedKey.toString('hex')}`;
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, SALT_ROUNDS);
 }
 
 /**
- * Verifies a plaintext password against a stored `salt:derivedKeyHex` string.
+ * Verifies a plaintext password against a stored bcrypt hash.
  */
-export function verifyPassword(password: string, storedHash: string): boolean {
-  const [salt, key] = storedHash.split(':');
-  if (!salt || !key) return false;
-
-  const keyBuffer = Buffer.from(key, 'hex');
-  const derivedKey = crypto.scryptSync(password, salt, 64);
-  return crypto.timingSafeEqual(keyBuffer, derivedKey);
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  if (!password || !storedHash) return false;
+  return bcrypt.compare(password, storedHash);
 }

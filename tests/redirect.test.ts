@@ -4,11 +4,12 @@ import { db, closeDb, users, urls } from '../src/db/index.js';
 import { closeRedis, purgeCacheKey, getCachedUrl } from '../src/cache/redis.js';
 import { DEFAULT_USER_ID, DEFAULT_API_KEY } from '../src/types/models.js';
 import crypto from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
 
 describe('Hot-Path Visitor Redirection Integration Tests', () => {
   const testKey = 'redir-' + crypto.randomBytes(4).toString('hex');
   const targetUrl = 'https://docs.aiven.io';
-  const testId = crypto.randomUUID();
+  const testId = uuidv7();
 
   beforeAll(async () => {
     // Seed default user

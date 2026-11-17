@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import crypto from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
 import { app } from '../src/app.js';
 import { db, urls } from '../src/db/index.js';
 import { clickhouse, flushClickEvents } from '../src/clickhouse/client.js';
@@ -13,7 +14,7 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
   beforeAll(async () => {
     // Seed test URL
     testShortKey = 'ch-' + crypto.randomBytes(4).toString('hex');
-    testUrlId = crypto.randomUUID();
+    testUrlId = uuidv7();
 
     const inserted = await db
       .insert(urls)
@@ -109,7 +110,7 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
     expect(Array.isArray(data.browsers)).toBe(true);
     expect(Array.isArray(data.operatingSystems)).toBe(true);
 
-    const countryNames = data.topCountries.map((c: any) => c.name);
+    const countryNames = data.topCountries.map((c: { name: string; count: number }) => c.name);
     expect(countryNames).toContain('US');
     expect(countryNames).toContain('DE');
   });

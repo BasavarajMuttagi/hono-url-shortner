@@ -9,5 +9,7 @@ export interface AppEnv {
     startTime: number;
     db: typeof db;
     redis: Redis;
+    userId: string;
+    userEmail: string;
   };
 }

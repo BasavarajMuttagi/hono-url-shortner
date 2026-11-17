@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { db, users } from '../db/index.js';
 import { redis } from '../cache/redis.js';
 import { env } from '../config/env.js';
+import type { AppEnv } from '../types/env.js';
 
 const COOKIE_NAME = 'auth_token';
 
@@ -14,7 +15,7 @@ const COOKIE_NAME = 'auth_token';
  * 2. Checks Authorization header ('Bearer <token>')
  * Validates either signed JWT or API key.
  */
-export const authGuard = createMiddleware(async (c, next) => {
+export const authGuard = createMiddleware<AppEnv>(async (c, next) => {
   let token: string | undefined = getCookie(c, COOKIE_NAME);
 
   if (!token) {
@@ -32,8 +33,8 @@ export const authGuard = createMiddleware(async (c, next) => {
   try {
     const payload = await verify(token, env.JWT_SECRET, 'HS256');
     if (payload && payload.sub) {
-      c.set('userId' as any, payload.sub as string);
-      c.set('userEmail' as any, (payload.email as string) || '');
+      c.set('userId', String(payload.sub));
+      c.set('userEmail', String(payload.email || ''));
       await next();
       return;
     }
@@ -70,6 +71,6 @@ export const authGuard = createMiddleware(async (c, next) => {
     }
   }
 
-  c.set('userId' as any, userId);
+  c.set('userId', userId);
   await next();
 });
