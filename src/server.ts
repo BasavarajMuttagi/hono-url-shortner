@@ -2,8 +2,9 @@ import { serve } from '@hono/node-server';
 import { showRoutes } from 'hono/dev';
 import { app } from './app.js';
 import { env } from './config/env.js';
-import { db, users, checkDbConnection, closeDb } from './db/index.js';
+import { db, pool, users, checkDbConnection, closeDb } from './db/index.js';
 import { checkRedisConnection, closeRedis } from './cache/redis.js';
+import { initClickHouse, closeClickHouse } from './clickhouse/client.js';
 import { DEFAULT_USER_ID, DEFAULT_API_KEY } from './types/models.js';
 
 const port = env.PORT;
@@ -16,6 +17,9 @@ async function bootstrap() {
     process.exit(1);
   }
   console.log('✅ PostgreSQL connected successfully');
+
+  // Ensure password_hash column exists
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;');
 
   // Ensure default seed user exists using Drizzle ORM
   await db
@@ -33,6 +37,14 @@ async function bootstrap() {
     console.warn('⚠️ Could not connect to Valkey. Caching will be degraded.');
   } else {
     console.log('✅ Valkey connected successfully');
+  }
+
+  console.log('⏳ Initializing Aiven ClickHouse schema...');
+  try {
+    await initClickHouse();
+    console.log('✅ ClickHouse connected and schema initialized');
+  } catch (chErr) {
+    console.error('❌ ClickHouse initialization error:', chErr);
   }
 
   // Print registered routes on startup in development
@@ -60,6 +72,7 @@ async function bootstrap() {
     server.close();
     await closeDb();
     await closeRedis();
+    await closeClickHouse();
     console.log('👋 Goodbye!');
     process.exit(0);
   };

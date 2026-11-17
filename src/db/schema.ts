@@ -1,17 +1,23 @@
 import { pgTable, uuid, varchar, text, boolean, timestamp, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import crypto from 'node:crypto';
 
 export const users = pgTable('users', {
-  id: uuid('id').primaryKey(),
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   email: varchar('email', { length: 255 }).notNull().unique(),
   apiKey: varchar('api_key', { length: 64 }).notNull().unique(),
+  passwordHash: text('password_hash'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const urls = pgTable(
   'urls',
   {
-    id: uuid('id').primaryKey(),
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),

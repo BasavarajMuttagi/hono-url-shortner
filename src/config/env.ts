@@ -24,6 +24,12 @@ const envSchema = z.object({
 
   // Privacy Salt
   SALT_SECRET: z.string().min(16, 'SALT_SECRET must be at least 16 characters long'),
+
+  // JWT Secret for Cookie & Token authentication
+  JWT_SECRET: z
+    .string()
+    .min(16, 'JWT_SECRET must be at least 16 characters long')
+    .default('super-secret-jwt-signing-key-for-url-shortener-2026'),
 });
 
 const parsed = envSchema.safeParse(process.env);

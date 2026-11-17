@@ -22,6 +22,42 @@ export interface CachedURL {
   notFound?: boolean;
 }
 
+export interface ClickEvent {
+  url_id: string;
+  short_key: string;
+  timestamp: string;
+  ip_hash: string;
+  country: string;
+  city: string;
+  browser: string;
+  os: string;
+  device_type: string;
+  referrer: string;
+}
+
+export interface AnalyticsTimeseries {
+  date: string;
+  clicks: number;
+}
+
+export interface AnalyticsBreakdown {
+  name: string;
+  count: number;
+}
+
+export interface AnalyticsResponse {
+  urlId: string;
+  shortKey: string;
+  totalClicks: number;
+  uniqueVisitors: number;
+  timeseries: AnalyticsTimeseries[];
+  topCountries: AnalyticsBreakdown[];
+  topReferrers: AnalyticsBreakdown[];
+  devices: AnalyticsBreakdown[];
+  browsers: AnalyticsBreakdown[];
+  operatingSystems: AnalyticsBreakdown[];
+}
+
 // Deterministic default user ID (UUIDv7) matching the Go architecture
 export const DEFAULT_USER_ID = '01927e00-0000-7000-8000-000000000001';
 export const DEFAULT_API_KEY = 'default-dev-api-key-secret-32-chars';
