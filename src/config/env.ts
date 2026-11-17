@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+// Explicitly load .env from project root
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  BASE_URL: z.string().url().default('http://localhost:8080'),
+  BASE_URL: z.string().min(1).default('http://localhost:8080'),
 
   // Aiven PostgreSQL
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
