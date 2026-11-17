@@ -5,9 +5,8 @@
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "dev": "npm run build:client && tsx watch src/server.ts",
-    "build:client": "esbuild src/client/app.tsx --bundle --minify --format=esm --jsx=automatic --jsx-import-source=hono/jsx/dom --outfile=public/app.js",
-    "build": "npm run build:client && tsc",
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:load": "k6 run load-tests/redirect.js",
@@ -58,7 +57,6 @@
     "@types/pg": "^8.11.10",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.11",
-    "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

@@ -22,8 +22,6 @@ const RESERVED_KEYS = new Set([
   'metrics',
   'docs',
   'api',
-  'dashboard',
-  'login',
 ]);
 
 redirectApp.get('/:shortKey', async (c) => {
