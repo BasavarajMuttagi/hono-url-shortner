@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import { apiRouter } from './api/index.js';
+import { authRouter } from './auth.js';
+import { urlRouter } from './url.js';
+import { analyticsRouter } from './analytics.js';
 import { metricsRouter } from './metrics.js';
 import { docsRouter } from './docs.js';
 import { redirectRouter } from './redirect.js';
@@ -9,7 +11,7 @@ import type { AppEnv } from '../types/env.js';
 export const rootRouter = new Hono<AppEnv>();
 
 /**
- * 🌲 Application Router Tree:
+ * 🌲 Flat Application Router Tree:
  *
  * rootRouter (/)
  *  ├── System & Health Probes:
@@ -45,8 +47,10 @@ rootRouter.route('/', metricsRouter);
 // 2. OpenAPI 3.1 Swagger UI
 rootRouter.route('/', docsRouter);
 
-// 3. Core REST API Tier
-rootRouter.route('/api/v1', apiRouter);
+// 3. Core REST API Endpoints
+rootRouter.route('/api/v1/auth', authRouter);
+rootRouter.route('/api/v1', urlRouter);
+rootRouter.route('/api/v1', analyticsRouter);
 
 // 4. Interactive JSX Web Dashboard
 rootRouter.route('/', dashboardRouter);

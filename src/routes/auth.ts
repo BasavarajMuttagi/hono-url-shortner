@@ -6,11 +6,11 @@ import { sign } from 'hono/jwt';
 import { setCookie, deleteCookie } from 'hono/cookie';
 import crypto from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { db, users } from '../../db/index.js';
-import { hashPassword, verifyPassword } from '../../helpers/password.js';
-import { env } from '../../config/env.js';
-import { authGuard } from '../../middleware/auth.js';
-import type { AppEnv } from '../../types/env.js';
+import { db, users } from '../db/index.js';
+import { hashPassword, verifyPassword } from '../helpers/password.js';
+import { env } from '../config/env.js';
+import { authGuard } from '../middleware/auth.js';
+import type { AppEnv } from '../types/env.js';
 
 export const authRouter = new Hono<AppEnv>();
 

@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import { etag } from 'hono/etag';
 import { eq, and } from 'drizzle-orm';
-import { db, urls } from '../../db/index.js';
-import { clickhouse } from '../../clickhouse/client.js';
-import { authGuard } from '../../middleware/auth.js';
-import type { AppEnv } from '../../types/env.js';
-import type { AnalyticsResponse } from '../../types/models.js';
+import { db, urls } from '../db/index.js';
+import { clickhouse } from '../clickhouse/client.js';
+import { authGuard } from '../middleware/auth.js';
+import type { AppEnv } from '../types/env.js';
+import type { AnalyticsResponse } from '../types/models.js';
 
 export const analyticsRouter = new Hono<AppEnv>();
 
