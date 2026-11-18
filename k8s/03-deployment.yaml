@@ -23,10 +23,10 @@ spec:
         app: hono-url-shortner
         app.kubernetes.io/name: hono-url-shortner
     spec:
-      # ClickHouse in-memory buffer drains within 1-5 seconds on shutdown; 
+      # ClickHouse in-memory buffer drains within 1-5 seconds on shutdown;
       # 45s ensures preStop hook and SIGTERM handler flush completely.
       terminationGracePeriodSeconds: 45
-      
+
       # Pod-level security context (Non-root user node UID 1000)
       securityContext:
         runAsNonRoot: true
@@ -47,9 +47,11 @@ spec:
 
       containers:
         - name: hono-app
-          image: hono-url-shortner:latest
+          # Public container image (GHCR or Docker Hub)
+          image: ghcr.io/basavarajmuttagi/hono-url-shortner:latest
+          # Use "Always" to pull fresh image on pod restarts, or "IfNotPresent" if caching locally
           imagePullPolicy: IfNotPresent
-          
+
           # Container-level security context
           securityContext:
             allowPrivilegeEscalation: false

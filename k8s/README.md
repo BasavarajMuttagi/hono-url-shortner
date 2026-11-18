@@ -13,11 +13,11 @@ No external domain name or TLS certificates are required. The Gateway listens di
 | [`00-namespace.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/00-namespace.yaml) | Creates isolated `hono-url-shortner` namespace |
 | [`01-configmap.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/01-configmap.yaml) | Non-sensitive configs (`PORT`, `NODE_ENV`, ClickHouse DB/user, Axiom datasets) |
 | [`02-secret.template.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/02-secret.template.yaml) | Reference template only (never put real passwords here) |
-| [`03-deployment.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/03-deployment.yaml) | 3-replica Deployment with rolling updates, non-root UID 1000, probes, and `preStop` drain hook |
+| [`03-deployment.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/03-deployment.yaml) | Basic 2-replica Deployment with health probes and graceful drainage |
 | [`04-service.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/04-service.yaml) | `ClusterIP` Service exposing port 8080 |
 | [`05-gateway.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/05-gateway.yaml) | Gateway API `Gateway` resource bound to `gatewayClassName: traefik` (HTTP :80) |
 | [`06-httproute.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/06-httproute.yaml) | `HTTPRoute` forwarding path prefix `/` to `hono-service:8080` |
-| [`07-hpa.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/07-hpa.yaml) | Horizontal Pod Autoscaler (3 to 20 replicas, CPU 70% / Memory 80% targets) |
+| [`07-hpa.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/07-hpa.yaml) | Horizontal Pod Autoscaler (2 to 5 replicas, CPU 70% / Memory 80% targets) |
 
 ---
 
@@ -48,17 +48,20 @@ If using Docker Desktop / cloud: Ensure `metrics-server` pod is running.
 
 ## 🚀 Step-by-Step Deployment
 
-### Step 1: Build & Load Docker Image
-If running on a local cluster (e.g. Minikube or Kind):
+### Step 1: Build & Push Public Docker Image
+Build and publish to GitHub Container Registry (GHCR) or Docker Hub:
+
 ```bash
-# Docker build
-docker build -t hono-url-shortner:latest .
+# 1. Build the production image
+docker build -t ghcr.io/basavarajmuttagi/hono-url-shortner:latest .
 
-# For Minikube:
-minikube image load hono-url-shortner:latest
+# 2. Authenticate and push to GHCR (or Docker Hub)
+# echo $CR_PAT | docker login ghcr.io -u BasavarajMuttagi --password-stdin
+docker push ghcr.io/basavarajmuttagi/hono-url-shortner:latest
 
-# Or for Kind:
-kind load docker-image hono-url-shortner:latest
+# (Optional: If testing purely locally on Minikube or Kind without pushing to registry)
+# minikube image load ghcr.io/basavarajmuttagi/hono-url-shortner:latest
+# kind load docker-image ghcr.io/basavarajmuttagi/hono-url-shortner:latest
 ```
 
 ### Step 2: Inject Secrets Directly from `.env` (Zero Leaks / No Files Written)
