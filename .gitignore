@@ -8,6 +8,8 @@ dist/
 .env
 .env.local
 .env.*.local
+k8s/*secret.yaml
+!k8s/02-secret.template.yaml
 
 # OS files
 .DS_Store

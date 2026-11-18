@@ -12,7 +12,7 @@ No external domain name or TLS certificates are required. The Gateway listens di
 | :--- | :--- |
 | [`00-namespace.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/00-namespace.yaml) | Creates isolated `hono-url-shortner` namespace |
 | [`01-configmap.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/01-configmap.yaml) | Non-sensitive configs (`PORT`, `NODE_ENV`, ClickHouse DB/user, Axiom datasets) |
-| [`02-secret.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/02-secret.yaml) | Template for DB URLs, Redis, ClickHouse passwords, salts, and JWT keys |
+| [`02-secret.template.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/02-secret.template.yaml) | Reference template only (never put real passwords here) |
 | [`03-deployment.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/03-deployment.yaml) | 3-replica Deployment with rolling updates, non-root UID 1000, probes, and `preStop` drain hook |
 | [`04-service.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/04-service.yaml) | `ClusterIP` Service exposing port 8080 |
 | [`05-gateway.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/05-gateway.yaml) | Gateway API `Gateway` resource bound to `gatewayClassName: traefik` (HTTP :80) |
@@ -61,10 +61,8 @@ minikube image load hono-url-shortner:latest
 kind load docker-image hono-url-shortner:latest
 ```
 
-### Step 2: Configure Secrets
-You have two options to apply credentials:
-
-**Option A (Fastest: load directly from your existing `.env` file):**
+### Step 2: Inject Secrets Directly from `.env` (Zero Leaks / No Files Written)
+Never write secrets into YAML files. You can stream your local `.env` straight into Kubernetes with one terminal command:
 ```bash
 kubectl apply -f k8s/00-namespace.yaml
 
@@ -73,13 +71,7 @@ kubectl create secret generic hono-secret \
   --from-env-file=.env \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
-
-**Option B (Edit `02-secret.yaml`):**
-Open [`k8s/02-secret.yaml`](file:///Users/basavarajmuttagi/Desktop/Scalable%20Backends/hono-url-shortner/k8s/02-secret.yaml), fill in your actual connection strings under `stringData:`, and apply:
-```bash
-kubectl apply -f k8s/00-namespace.yaml
-kubectl apply -f k8s/02-secret.yaml
-```
+This loads your passwords directly into Kubernetes memory without saving or committing anything to disk.
 
 ### Step 3: Apply All Manifests
 ```bash
