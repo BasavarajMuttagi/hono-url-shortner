@@ -101,7 +101,7 @@ const openApiSpec = {
     '/api/v1/urls': {
       post: {
         summary: 'Create Shortened URL',
-        description: 'Shortens a destination URL, supporting Base62 random keys and custom aliases.',
+        description: 'Shortens a destination URL, generating a collision-resistant 7-character Base62 short key.',
         requestBody: {
           required: true,
           content: {
@@ -112,7 +112,6 @@ const openApiSpec = {
                 properties: {
                   original_url: { type: 'string', format: 'uri' },
                   title: { type: 'string' },
-                  custom_key: { type: 'string' },
                 },
               },
             },
@@ -121,7 +120,6 @@ const openApiSpec = {
         responses: {
           '201': { description: 'Shortened URL created' },
           '400': { description: 'Validation error' },
-          '409': { description: 'Custom key already in use' },
           '429': { description: 'Rate limit exceeded' },
         },
       },

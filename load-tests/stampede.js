@@ -31,10 +31,8 @@ function getApiKey() {
 const API_KEY = getApiKey();
 
 export function setup() {
-  const customKey = 'stampede-' + Math.random().toString(36).substring(2, 8);
   const payload = JSON.stringify({
     original_url: 'https://postgres.org',
-    custom_key: customKey,
   });
 
   const res = http.post(`${BASE_URL}/api/v1/urls`, payload, {
@@ -44,13 +42,15 @@ export function setup() {
     },
   });
 
+  const body = res.json();
+  const shortKey = body.short_key;
+
   // Purge the cache initially so it is uncached
-  http.del(`${BASE_URL}/api/v1/cache/${customKey}`, null, {
+  http.del(`${BASE_URL}/api/v1/cache/${shortKey}`, null, {
     headers: { 'Authorization': `Bearer ${API_KEY}` },
   });
 
-  const body = res.json();
-  return { shortKey: customKey, urlId: body.id };
+  return { shortKey, urlId: body.id };
 }
 
 export default function (data) {

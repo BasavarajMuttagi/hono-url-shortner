@@ -29,12 +29,10 @@ function getApiKey() {
 const API_KEY = getApiKey();
 
 export function setup() {
-  const customKey = 'mix-' + Math.random().toString(36).substring(2, 8);
   const res = http.post(
     `${BASE_URL}/api/v1/urls`,
     JSON.stringify({
       original_url: 'https://hono.dev',
-      custom_key: customKey,
     }),
     {
       headers: {
@@ -45,7 +43,7 @@ export function setup() {
   );
 
   const body = res.json();
-  return { shortKey: customKey, urlId: body.id };
+  return { shortKey: body.short_key, urlId: body.id };
 }
 
 export default function (data) {

@@ -1,6 +1,7 @@
 import { db, users, urls, closeDb } from './index.js';
 import { clickhouse } from '../clickhouse/client.js';
 import { redis, closeRedis } from '../cache/redis.js';
+import { env } from '../config/env.js';
 import { sql } from 'drizzle-orm';
 
 async function cleanupAll() {
@@ -8,25 +9,36 @@ async function cleanupAll() {
 
   // 1. PostgreSQL Cleanup
   console.log('1️⃣ Cleaning PostgreSQL...');
-  // Delete all test URLs
-  const deletedUrls = await db.execute(sql`
+  // Delete all test URLs (from test users and temporary seed test runs)
+  await db.execute(sql`
     DELETE FROM urls 
-    WHERE short_key LIKE 'redir-%'
-       OR short_key LIKE 'ch-%'
-       OR short_key LIKE 'stress-%'
-       OR short_key LIKE 'k6%'
-       OR short_key LIKE 'mix-%'
-       OR short_key LIKE 'stampede-%'
-       OR short_key = 'axiom-docs';
+    WHERE user_id IN (
+      SELECT id FROM users 
+      WHERE email LIKE 'loaduser_%'
+         OR email LIKE 'user_%'
+         OR email = 'test@example.com'
+         OR email = 'testuser@example.com'
+         OR email = 'developer@local.dev'
+    )
+    OR user_id = ${env.SEED_USER_ID}
+    OR short_key LIKE 'redir-%'
+    OR short_key LIKE 'ch-%'
+    OR short_key LIKE 'stress-%'
+    OR short_key LIKE 'k6%'
+    OR short_key LIKE 'mix-%'
+    OR short_key LIKE 'stampede-%'
+    OR short_key = 'axiom-docs';
   `);
   console.log(`   ✅ Deleted test URLs from PostgreSQL`);
 
-  // Delete all load test and test users (keeping only the seeded user and real users)
-  const deletedUsers = await db.execute(sql`
+  // Delete all load test and test users (keeping only the seeded dev user and real users)
+  await db.execute(sql`
     DELETE FROM users 
     WHERE email LIKE 'loaduser_%'
        OR email LIKE 'user_%'
-       OR email = 'test@example.com';
+       OR email = 'test@example.com'
+       OR email = 'testuser@example.com'
+       OR email = 'developer@local.dev';
   `);
   console.log(`   ✅ Deleted test/load users from PostgreSQL`);
 

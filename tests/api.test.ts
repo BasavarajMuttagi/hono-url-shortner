@@ -115,8 +115,7 @@ describe('URL Management API Integration Tests', () => {
     expect(body.count).toBeGreaterThan(0);
   });
 
-  it('should support creating custom short keys', async () => {
-    const customKey = 'my-custom-slug';
+  it('should auto-generate collision-resistant 7-character Base62 short keys', async () => {
     const res = await app.request('/api/v1/urls', {
       method: 'POST',
       headers: {
@@ -125,13 +124,12 @@ describe('URL Management API Integration Tests', () => {
       },
       body: JSON.stringify({
         original_url: 'https://hono.dev',
-        custom_key: customKey,
       }),
     });
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.short_key).toBe(customKey);
+    expect(body.short_key).toMatch(/^[0-9a-zA-Z]{7}$/);
 
     // Clean up
     await app.request(`/api/v1/urls/${body.id}`, {

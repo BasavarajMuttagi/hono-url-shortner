@@ -28,12 +28,10 @@ function getApiKey() {
 const API_KEY = getApiKey();
 
 export function setup() {
-  const customKey = 'stress-' + Math.random().toString(36).substring(2, 8);
   const res = http.post(
     `${BASE_URL}/api/v1/urls`,
     JSON.stringify({
       original_url: 'https://github.com/axiomhq',
-      custom_key: customKey,
     }),
     {
       headers: {
@@ -44,7 +42,7 @@ export function setup() {
   );
 
   const body = res.json();
-  const shortKey = body.short_key || customKey;
+  const shortKey = body.short_key;
 
   // Pre-warm cache
   http.get(`${BASE_URL}/${shortKey}`, { redirects: 0 });

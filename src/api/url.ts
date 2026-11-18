@@ -29,12 +29,6 @@ const createUrlSchema = z.object({
       'URL contains illegal unencoded characters (characters like | must be percent-encoded as %7C per RFC 3986)'
     ),
   title: z.string().max(255).optional().default(''),
-  custom_key: z
-    .string()
-    .min(1)
-    .max(16)
-    .regex(/^[0-9a-zA-Z_-]+$/, 'Custom key must contain only alphanumeric characters, dashes, or underscores')
-    .optional(),
 });
 
 // Cache purge endpoint for stampede and load testing
@@ -54,43 +48,29 @@ urlApp.use('/urls', authGuard);
 
 // 1. Create a shortened URL
 urlApp.post('/urls', linkCreateRateLimiter, zValidator('json', createUrlSchema), async (c) => {
-  const { original_url, title, custom_key } = c.req.valid('json');
+  const { original_url, title } = c.req.valid('json');
   const userId = c.get('userId');
 
-  let shortKey = custom_key;
-
-  // If custom key provided, check for collisions
-  if (shortKey) {
+  // Scalable, collision-resistant 7-character Base62 key generation
+  let shortKey = '';
+  let attempts = 0;
+  while (!shortKey && attempts < 5) {
+    attempts++;
+    const candidate = generateShortKey(7);
     const existing = await db
       .select({ id: urls.id })
       .from(urls)
-      .where(eq(urls.shortKey, shortKey))
+      .where(eq(urls.shortKey, candidate))
       .limit(1);
 
-    if (existing.length > 0) {
-      return c.json({ error: 'Short key is already in use' }, 409);
+    if (existing.length === 0) {
+      shortKey = candidate;
+      break;
     }
-  } else {
-    // Generate unique random Base62 key (with retry on rare collision)
-    let attempts = 0;
-    while (!shortKey && attempts < 5) {
-      attempts++;
-      const candidate = generateShortKey(7);
-      const existing = await db
-        .select({ id: urls.id })
-        .from(urls)
-        .where(eq(urls.shortKey, candidate))
-        .limit(1);
+  }
 
-      if (existing.length === 0) {
-        shortKey = candidate;
-        break;
-      }
-    }
-
-    if (!shortKey) {
-      return c.json({ error: 'Failed to generate a unique short key, please try again' }, 500);
-    }
+  if (!shortKey) {
+    return c.json({ error: 'Failed to generate a unique short key, please try again' }, 500);
   }
 
   const newId = uuidv7();

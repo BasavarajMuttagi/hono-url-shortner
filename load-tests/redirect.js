@@ -30,10 +30,8 @@ function getApiKey() {
 const API_KEY = getApiKey();
 
 export function setup() {
-  const customKey = 'k6-' + Math.random().toString(36).substring(2, 8);
   const payload = JSON.stringify({
     original_url: 'https://news.ycombinator.com',
-    custom_key: customKey,
   });
 
   const res = http.post(`${BASE_URL}/api/v1/urls`, payload, {
@@ -44,7 +42,7 @@ export function setup() {
   });
 
   const body = res.json();
-  const shortKey = body.short_key || customKey;
+  const shortKey = body.short_key;
 
   // Pre-warm the cache with 1 initial request
   http.get(`${BASE_URL}/${shortKey}`, { redirects: 0 });
