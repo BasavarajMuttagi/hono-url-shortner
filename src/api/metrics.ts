@@ -8,15 +8,84 @@ import type { AppEnv } from '../types/env.js';
 
 export const metricsApp = new Hono<AppEnv>();
 
-metricsApp.get('/health', (c) => {
+/**
+ * Validates backing service connectivity in parallel.
+ * Fails if any critical tier (Postgres, Valkey, ClickHouse) is unreachable.
+ */
+async function checkServicesHealth() {
+  const [dbOk, redisOk, chOk] = await Promise.all([
+    db
+      .execute(sql`SELECT 1`)
+      .then(() => true)
+      .catch(() => false),
+    redis
+      .ping()
+      .then((p) => p === 'PONG')
+      .catch(() => false),
+    clickhouse
+      .ping()
+      .then((r) => r.success)
+      .catch(() => false),
+  ]);
+
+  return {
+    isHealthy: dbOk && redisOk && chOk,
+    services: {
+      postgres: dbOk ? 'up' : 'down',
+      valkey: redisOk ? 'up' : 'down',
+      clickhouse: chOk ? 'up' : 'down',
+    },
+  };
+}
+
+/**
+ * 1. Deep Readiness Health Check (GET /health & GET /health/ready)
+ * Actively checks database, cache, and OLAP analytics storage.
+ * Returns HTTP 200 if all backing tiers are operational.
+ * Returns HTTP 503 Service Unavailable if any tier fails,
+ * prompting Docker, Kubernetes, or GCP LB to immediately stop routing traffic.
+ */
+metricsApp.get('/health', async (c) => {
+  const { isHealthy, services } = await checkServicesHealth();
+  const statusCode = isHealthy ? 200 : 503;
+
+  return c.json(
+    {
+      status: isHealthy ? 'healthy' : 'unhealthy',
+      environment: env.NODE_ENV,
+      uptimeSeconds: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+      services,
+    },
+    statusCode
+  );
+});
+
+metricsApp.get('/health/ready', async (c) => {
+  const { isHealthy, services } = await checkServicesHealth();
+  return c.json(
+    {
+      status: isHealthy ? 'healthy' : 'unhealthy',
+      services,
+    },
+    isHealthy ? 200 : 503
+  );
+});
+
+/**
+ * 2. Shallow Liveness Health Check (GET /health/live)
+ * Pure process/event loop responsiveness ping for Kubernetes livenessProbe.
+ */
+metricsApp.get('/health/live', (c) => {
   return c.json({
-    status: 'healthy',
-    environment: env.NODE_ENV,
+    status: 'alive',
     uptimeSeconds: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
   });
 });
 
+/**
+ * 3. Detailed Telemetry & Metrics (GET /metrics)
+ */
 metricsApp.get('/metrics', async (c) => {
   // Check PostgreSQL latency
   const pgStart = performance.now();
