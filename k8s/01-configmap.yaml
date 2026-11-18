@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hono-config
+  namespace: hono-url-shortner
+  labels:
+    app.kubernetes.io/name: hono-url-shortner
+    app.kubernetes.io/component: config
+data:
+  PORT: "8080"
+  NODE_ENV: "production"
+  BASE_URL: "http://localhost:8080"
+  CLICKHOUSE_USER: "default"
+  CLICKHOUSE_DB: "default"
+  AXIOM_URL: "https://api.axiom.co"
+  AXIOM_DATASET: "hono-url-shortner-logs"
+  AXIOM_METRICS_DATASET: "hono-url-shortner-metrics"
+  OTEL_SERVICE_NAME: "hono-url-shortner"

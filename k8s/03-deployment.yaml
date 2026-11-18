@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hono-url-shortner
+  namespace: hono-url-shortner
+  labels:
+    app.kubernetes.io/name: hono-url-shortner
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: hono-url-shortner
+  template:
+    metadata:
+      labels:
+        app: hono-url-shortner
+        app.kubernetes.io/name: hono-url-shortner
+    spec:
+      # ClickHouse in-memory buffer drains within 1-5 seconds on shutdown; 
+      # 45s ensures preStop hook and SIGTERM handler flush completely.
+      terminationGracePeriodSeconds: 45
+      
+      # Pod-level security context (Non-root user node UID 1000)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Distribute pods evenly across nodes for fault tolerance
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: hono-url-shortner
+
+      containers:
+        - name: hono-app
+          image: hono-url-shortner:latest
+          imagePullPolicy: IfNotPresent
+          
+          # Container-level security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+          # Graceful drainage hook: wait 5s for Ingress/Gateway endpoints to stop sending new traffic
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: hono-config
+            - secretRef:
+                name: hono-secret
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+
+          # Startup Probe: Gives container up to 30s to boot and establish DB/Redis/ClickHouse pools
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            failureThreshold: 15
+
+          # Readiness Probe: Checks if the pod can actively serve traffic
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # Liveness Probe: Restarts stuck containers
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
