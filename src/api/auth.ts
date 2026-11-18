@@ -169,3 +169,13 @@ authApp.get('/me', authGuard, async (c) => {
 
   return c.json({ user: rows[0] });
 });
+
+// 5. Delete Current User Account
+authApp.delete('/me', authGuard, async (c) => {
+  const userId = c.get('userId');
+
+  await db.delete(users).where(eq(users.id, userId));
+  deleteCookie(c, COOKIE_NAME, { path: '/' });
+
+  return c.json({ status: 'deleted', id: userId });
+});

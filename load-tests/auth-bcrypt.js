@@ -47,4 +47,12 @@ export default function () {
     'login is 200': (r) => r.status === 200,
     'has token': (r) => r.json().token !== undefined,
   });
+
+  // 3. Immediately clean up test benchmark user
+  const loginBody = loginRes.json();
+  if (loginBody && loginBody.token) {
+    http.del(`${BASE_URL}/api/v1/auth/me`, null, {
+      headers: { Authorization: `Bearer ${loginBody.token}` },
+    });
+  }
 }

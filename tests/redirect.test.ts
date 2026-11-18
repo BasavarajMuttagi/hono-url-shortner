@@ -2,9 +2,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { app } from '../src/app.js';
 import { db, closeDb, users, urls } from '../src/db/index.js';
 import { closeRedis, purgeCacheKey, getCachedUrl } from '../src/cache/redis.js';
-import { DEFAULT_USER_ID, DEFAULT_API_KEY } from '../src/types/models.js';
+import { TEST_USER_ID, TEST_API_KEY, TEST_USER_EMAIL } from './fixtures.js';
 import crypto from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
+import { eq } from 'drizzle-orm';
 
 describe('Hot-Path Visitor Redirection Integration Tests', () => {
   const testKey = 'redir-' + crypto.randomBytes(4).toString('hex');
@@ -16,18 +17,21 @@ describe('Hot-Path Visitor Redirection Integration Tests', () => {
     await db
       .insert(users)
       .values({
-        id: DEFAULT_USER_ID,
-        email: 'default@shortener.local',
-        apiKey: DEFAULT_API_KEY,
+        id: TEST_USER_ID,
+        email: TEST_USER_EMAIL,
+        apiKey: TEST_API_KEY,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { apiKey: TEST_API_KEY, email: TEST_USER_EMAIL },
+      });
 
     // Insert test URL
     await db
       .insert(urls)
       .values({
         id: testId,
-        userId: DEFAULT_USER_ID,
+        userId: TEST_USER_ID,
         shortKey: testKey,
         originalUrl: targetUrl,
         title: 'Aiven Docs',
@@ -37,6 +41,7 @@ describe('Hot-Path Visitor Redirection Integration Tests', () => {
   });
 
   afterAll(async () => {
+    await db.delete(urls).where(eq(urls.id, testId));
     await purgeCacheKey(testKey);
     await closeDb();
     await closeRedis();
@@ -95,7 +100,7 @@ describe('Hot-Path Visitor Redirection Integration Tests', () => {
     const purgeRes = await app.request(`/api/v1/cache/${testKey}`, {
       method: 'DELETE',
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
     });
 

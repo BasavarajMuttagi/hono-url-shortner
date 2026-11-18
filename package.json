@@ -10,12 +10,15 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:load": "k6 run load-tests/redirect.js",
+    "test:load:high": "k6 run load-tests/high-load.js",
     "test:load:stampede": "k6 run load-tests/stampede.js",
     "test:load:mixed": "k6 run load-tests/mixed.js",
     "test:load:live": "k6 run load-tests/live-monitor.js",
+    "test:load:auth": "k6 run load-tests/auth-bcrypt.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
+    "db:clean": "tsx src/db/cleanup.ts",
     "db:studio": "drizzle-kit studio"
   },
   "keywords": [

@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { db, urls } from '../db/index.js';
 import { setCachedUrl, purgeCacheKey } from '../cache/redis.js';
+import { clickhouse } from '../clickhouse/client.js';
 import { generateShortKey } from '../helpers/base62.js';
 import { authGuard } from '../middleware/auth.js';
 import { linkCreateRateLimiter } from '../middleware/ratelimit.js';
@@ -207,6 +208,15 @@ urlApp.delete('/urls/:id', async (c) => {
 
   // Invalidate cache in Valkey
   await purgeCacheKey(rows[0].shortKey);
+
+  // Clean up telemetry events in ClickHouse asynchronously
+  try {
+    await clickhouse.command({
+      query: `ALTER TABLE click_events DELETE WHERE url_id = '${rows[0].id}'`,
+    });
+  } catch (err) {
+    // Non-fatal if ClickHouse cleanup encounters background mutation queue
+  }
 
   return c.json({
     status: 'deleted',

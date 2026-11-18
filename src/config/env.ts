@@ -6,9 +6,9 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const envSchema = z.object({
-  PORT: z.coerce.number().default(8080),
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  BASE_URL: z.string().min(1).default('http://localhost:8080'),
+  PORT: z.coerce.number().min(1, 'PORT is required'),
+  NODE_ENV: z.enum(['development', 'production', 'test']),
+  BASE_URL: z.string().min(1, 'BASE_URL is required'),
 
   // Aiven PostgreSQL
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -18,25 +18,27 @@ const envSchema = z.object({
 
   // Aiven ClickHouse
   CLICKHOUSE_URL: z.string().min(1, 'CLICKHOUSE_URL is required'),
-  CLICKHOUSE_USER: z.string().default('default'),
-  CLICKHOUSE_PASSWORD: z.string().default(''),
-  CLICKHOUSE_DB: z.string().default('default'),
+  CLICKHOUSE_USER: z.string().min(1, 'CLICKHOUSE_USER is required'),
+  CLICKHOUSE_PASSWORD: z.string(),
+  CLICKHOUSE_DB: z.string().min(1, 'CLICKHOUSE_DB is required'),
 
   // Privacy Salt
   SALT_SECRET: z.string().min(16, 'SALT_SECRET must be at least 16 characters long'),
 
   // JWT Secret for Cookie & Token authentication
-  JWT_SECRET: z
-    .string()
-    .min(16, 'JWT_SECRET must be at least 16 characters long')
-    .default('super-secret-jwt-signing-key-for-url-shortener-2026'),
+  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters long'),
 
   // Axiom Cloud Observability & OpenTelemetry
   AXIOM_TOKEN: z.string().optional(),
-  AXIOM_DATASET: z.string().default('hono-url-shortner-traces'),
-  AXIOM_METRICS_DATASET: z.string().default('hono-url-shortner-development-metrics'),
-  AXIOM_URL: z.string().default('https://us-east-1.aws.edge.axiom.co'),
-  OTEL_SERVICE_NAME: z.string().default('hono-url-shortner'),
+  AXIOM_DATASET: z.string().optional(),
+  AXIOM_METRICS_DATASET: z.string().optional(),
+  AXIOM_URL: z.string().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
+
+  // Development & Testing Seed Credentials (Imported purely from env)
+  SEED_USER_ID: z.string().min(1, 'SEED_USER_ID is required'),
+  SEED_USER_EMAIL: z.string().email('SEED_USER_EMAIL must be a valid email'),
+  SEED_API_KEY: z.string().min(16, 'SEED_API_KEY must be at least 16 characters long'),
 });
 
 const parsed = envSchema.safeParse(process.env);

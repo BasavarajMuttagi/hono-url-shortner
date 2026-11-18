@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { app } from '../src/app.js';
-import { DEFAULT_API_KEY } from '../src/types/models.js';
+import { TEST_API_KEY } from './fixtures.js';
 
 describe('Middleware Pipeline & Developer Ergonomics Tests', () => {
   it('should return health status on GET /health', async () => {
@@ -55,7 +55,7 @@ describe('Middleware Pipeline & Developer Ergonomics Tests', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: largePayload,
     });

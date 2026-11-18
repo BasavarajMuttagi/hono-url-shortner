@@ -57,7 +57,3 @@ export interface AnalyticsResponse {
   browsers: AnalyticsBreakdown[];
   operatingSystems: AnalyticsBreakdown[];
 }
-
-// Deterministic default user ID (UUIDv7) matching the Go architecture
-export const DEFAULT_USER_ID = '01927e00-0000-7000-8000-000000000001';
-export const DEFAULT_API_KEY = 'default-dev-api-key-secret-32-chars';

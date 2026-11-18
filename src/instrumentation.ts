@@ -19,20 +19,21 @@ class NoopTraceExporter {
 }
 
 // Configure OTLP Trace Exporter for Axiom (https://axiom.co/docs/send-data/opentelemetry#opentelemetry-for-node)
-const traceExporter = env.AXIOM_TOKEN
-  ? new OTLPTraceExporter({
-      url: `${env.AXIOM_URL.replace(/\/+$/, '')}/v1/traces`,
-      headers: {
-        Authorization: `Bearer ${env.AXIOM_TOKEN}`,
-        'X-Axiom-Dataset': env.AXIOM_DATASET,
-      },
-    })
-  : new NoopTraceExporter();
+const traceExporter =
+  env.AXIOM_TOKEN && env.AXIOM_URL && env.AXIOM_DATASET
+    ? new OTLPTraceExporter({
+        url: `${env.AXIOM_URL.replace(/\/+$/, '')}/v1/traces`,
+        headers: {
+          Authorization: `Bearer ${env.AXIOM_TOKEN}`,
+          'X-Axiom-Dataset': env.AXIOM_DATASET,
+        },
+      })
+    : new NoopTraceExporter();
 
 // Configure OTLP Metric Exporter for Axiom (collects CPU, memory, event loop)
 let metricReader: PeriodicExportingMetricReader | undefined;
 
-if (env.AXIOM_TOKEN) {
+if (env.AXIOM_TOKEN && env.AXIOM_URL && env.AXIOM_METRICS_DATASET) {
   const metricExporter = new OTLPMetricExporter({
     url: `${env.AXIOM_URL.replace(/\/+$/, '')}/v1/metrics`,
     headers: {
@@ -49,7 +50,7 @@ if (env.AXIOM_TOKEN) {
 
 export const otelSdk = new NodeSDK({
   resource: resourceFromAttributes({
-    [ATTR_SERVICE_NAME]: env.OTEL_SERVICE_NAME,
+    [ATTR_SERVICE_NAME]: env.OTEL_SERVICE_NAME || 'hono-url-shortner',
   }),
   traceExporter,
   metricReaders: metricReader ? [metricReader] : [],

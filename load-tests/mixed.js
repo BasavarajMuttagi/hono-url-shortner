@@ -14,7 +14,19 @@ export const options = {
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const API_KEY = __ENV.API_KEY || 'default-dev-api-key-secret-32-chars';
+
+function getApiKey() {
+  if (__ENV.SEED_API_KEY) return __ENV.SEED_API_KEY;
+  if (__ENV.API_KEY) return __ENV.API_KEY;
+  try {
+    const raw = open('../.env');
+    const match = raw.match(/^SEED_API_KEY=(.+)$/m);
+    if (match) return match[1].trim();
+  } catch (_) {}
+  return '';
+}
+
+const API_KEY = getApiKey();
 
 export function setup() {
   const customKey = 'mix-' + Math.random().toString(36).substring(2, 8);

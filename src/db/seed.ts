@@ -1,16 +1,23 @@
 import { db, users, closeDb } from './index.js';
-import { DEFAULT_USER_ID, DEFAULT_API_KEY } from '../types/models.js';
+import { env } from '../config/env.js';
+
+const SEED_USER_ID = env.SEED_USER_ID;
+const SEED_API_KEY = env.SEED_API_KEY;
+const SEED_EMAIL = env.SEED_USER_EMAIL;
 
 async function seed() {
-  console.log('🌱 Seeding default user...');
+  console.log(`🌱 Seeding development user (${SEED_EMAIL})...`);
   await db
     .insert(users)
     .values({
-      id: DEFAULT_USER_ID,
-      email: 'default@shortener.local',
-      apiKey: DEFAULT_API_KEY,
+      id: SEED_USER_ID,
+      email: SEED_EMAIL,
+      apiKey: SEED_API_KEY,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: users.id,
+      set: { apiKey: SEED_API_KEY, email: SEED_EMAIL },
+    });
   console.log('✅ Seeding completed successfully');
   await closeDb();
 }

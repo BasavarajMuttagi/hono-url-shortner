@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { app } from '../src/app.js';
-import { db, closeDb, users } from '../src/db/index.js';
+import { db, closeDb, users, urls } from '../src/db/index.js';
 import { closeRedis, purgeCacheKey } from '../src/cache/redis.js';
-import { DEFAULT_USER_ID, DEFAULT_API_KEY } from '../src/types/models.js';
+import { TEST_USER_ID, TEST_API_KEY, TEST_USER_EMAIL } from './fixtures.js';
+import { eq } from 'drizzle-orm';
 
 describe('URL Management API Integration Tests', () => {
   let createdUrlId = '';
@@ -13,14 +14,20 @@ describe('URL Management API Integration Tests', () => {
     await db
       .insert(users)
       .values({
-        id: DEFAULT_USER_ID,
-        email: 'default@shortener.local',
-        apiKey: DEFAULT_API_KEY,
+        id: TEST_USER_ID,
+        email: TEST_USER_EMAIL,
+        apiKey: TEST_API_KEY,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { apiKey: TEST_API_KEY, email: TEST_USER_EMAIL },
+      });
   });
 
   afterAll(async () => {
+    if (createdUrlId) {
+      await db.delete(urls).where(eq(urls.id, createdUrlId));
+    }
     if (createdShortKey) {
       await purgeCacheKey(createdShortKey);
     }
@@ -45,7 +52,7 @@ describe('URL Management API Integration Tests', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: JSON.stringify({ original_url: 'not-a-valid-url' }),
     });
@@ -58,7 +65,7 @@ describe('URL Management API Integration Tests', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: JSON.stringify({
         original_url: 'https://news.ycombinator.com',
@@ -83,7 +90,7 @@ describe('URL Management API Integration Tests', () => {
     const res = await app.request(`/api/v1/urls/${createdUrlId}`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
     });
 
@@ -98,7 +105,7 @@ describe('URL Management API Integration Tests', () => {
     const res = await app.request('/api/v1/urls?page=1&limit=10', {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
     });
 
@@ -114,7 +121,7 @@ describe('URL Management API Integration Tests', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
       body: JSON.stringify({
         original_url: 'https://hono.dev',
@@ -129,7 +136,7 @@ describe('URL Management API Integration Tests', () => {
     // Clean up
     await app.request(`/api/v1/urls/${body.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${DEFAULT_API_KEY}` },
+      headers: { Authorization: `Bearer ${TEST_API_KEY}` },
     });
   });
 
@@ -137,7 +144,7 @@ describe('URL Management API Integration Tests', () => {
     const res = await app.request(`/api/v1/urls/${createdUrlId}`, {
       method: 'DELETE',
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
     });
 

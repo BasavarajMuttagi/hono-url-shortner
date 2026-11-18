@@ -7,6 +7,7 @@ import { analyticsApp } from './api/analytics.js';
 import { redirectApp } from './api/redirect.js';
 import { metricsApp } from './api/metrics.js';
 import { docsApp } from './api/docs.js';
+import { dashboardApp } from './views/dashboard.js';
 
 export const app = new Hono<AppEnv>();
 
@@ -28,7 +29,10 @@ app.route('/', analyticsApp);
 // 6. URL Management API (/api/v1/urls, /api/v1/cache)
 app.route('/api/v1', urlApp);
 
-// 7. Hot-Path Visitor Redirection (/:shortKey)
+// 7. Interactive Hono JSX User Dashboard (/, /dashboard)
+app.route('/', dashboardApp);
+
+// 8. Hot-Path Visitor Redirection (/:shortKey)
 app.route('/', redirectApp);
 
 export type AppType = typeof app;

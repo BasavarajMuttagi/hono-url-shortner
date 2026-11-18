@@ -10,8 +10,8 @@ const cleanConnectionString = env.DATABASE_URL.replace(/[?&]sslmode=[^&]+/, '');
 
 export const pool = new Pool({
   connectionString: cleanConnectionString,
-  max: 18, // Tuned for Aiven PostgreSQL (20 ceiling)
-  idleTimeoutMillis: 30000,
+  max: 10, // Tuned for Aiven PostgreSQL connection ceiling (leaves headroom for tests/scripts)
+  idleTimeoutMillis: 5000,
   connectionTimeoutMillis: 10000,
   ssl: {
     rejectUnauthorized: false,

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import crypto from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
+import { eq } from 'drizzle-orm';
 import { app } from '../src/app.js';
 import { db, urls } from '../src/db/index.js';
 import { clickhouse, flushClickEvents } from '../src/clickhouse/client.js';
-import { DEFAULT_USER_ID, DEFAULT_API_KEY } from '../src/types/models.js';
+import { purgeCacheKey } from '../src/cache/redis.js';
+import { TEST_USER_ID, TEST_API_KEY } from './fixtures.js';
 
 describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
   let testUrlId: string;
@@ -20,7 +22,7 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
       .insert(urls)
       .values({
         id: testUrlId,
-        userId: DEFAULT_USER_ID,
+        userId: TEST_USER_ID,
         shortKey: testShortKey,
         originalUrl: testTargetUrl,
         title: 'Spotify Engineering Blog',
@@ -40,6 +42,13 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
       } catch (err) {
         console.warn('Failed to clean up test click events:', err);
       }
+    }
+    // Clean up test URL from PostgreSQL & Valkey cache
+    if (testUrlId) {
+      await db.delete(urls).where(eq(urls.id, testUrlId));
+    }
+    if (testShortKey) {
+      await purgeCacheKey(testShortKey);
     }
   });
 
@@ -89,7 +98,7 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
   it('should query multi-aggregation analytics from ClickHouse (GET /api/v1/urls/:id/analytics)', async () => {
     const res = await app.request(`/api/v1/urls/${testUrlId}/analytics`, {
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
     });
 
@@ -119,7 +128,7 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
     // First request to obtain ETag
     const firstRes = await app.request(`/api/v1/urls/${testUrlId}/analytics`, {
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
       },
     });
     expect(firstRes.status).toBe(200);
@@ -129,7 +138,7 @@ describe('ClickHouse OLAP Analytics & Telemetry Integration Tests', () => {
     // Second request with If-None-Match header
     const cachedRes = await app.request(`/api/v1/urls/${testUrlId}/analytics`, {
       headers: {
-        Authorization: `Bearer ${DEFAULT_API_KEY}`,
+        Authorization: `Bearer ${TEST_API_KEY}`,
         'If-None-Match': etag!,
       },
     });

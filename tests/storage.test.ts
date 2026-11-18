@@ -10,7 +10,7 @@ import {
   purgeCacheKey,
   calculateJitteredTtl,
 } from '../src/cache/redis.js';
-import { DEFAULT_USER_ID, DEFAULT_API_KEY } from '../src/types/models.js';
+import { TEST_USER_ID, TEST_API_KEY, TEST_USER_EMAIL } from './fixtures.js';
 
 describe('Aiven Storage Tier Integration Tests with Drizzle ORM', () => {
   beforeAll(async () => {
@@ -18,11 +18,14 @@ describe('Aiven Storage Tier Integration Tests with Drizzle ORM', () => {
     await db
       .insert(users)
       .values({
-        id: DEFAULT_USER_ID,
-        email: 'default@shortener.local',
-        apiKey: DEFAULT_API_KEY,
+        id: TEST_USER_ID,
+        email: TEST_USER_EMAIL,
+        apiKey: TEST_API_KEY,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: users.id,
+        set: { apiKey: TEST_API_KEY, email: TEST_USER_EMAIL },
+      });
   });
 
   afterAll(async () => {
@@ -36,10 +39,10 @@ describe('Aiven Storage Tier Integration Tests with Drizzle ORM', () => {
   });
 
   it('should query seeded default user via Drizzle ORM', async () => {
-    const results = await db.select().from(users).where(eq(users.id, DEFAULT_USER_ID));
+    const results = await db.select().from(users).where(eq(users.id, TEST_USER_ID));
     expect(results.length).toBe(1);
-    expect(results[0].email).toBe('default@shortener.local');
-    expect(results[0].apiKey).toBe(DEFAULT_API_KEY);
+    expect(results[0].email).toBe(TEST_USER_EMAIL);
+    expect(results[0].apiKey).toBe(TEST_API_KEY);
   });
 
   it('should successfully connect to Aiven Valkey over TLS', async () => {
@@ -49,7 +52,7 @@ describe('Aiven Storage Tier Integration Tests with Drizzle ORM', () => {
 
   it('should set and get cached URL entries with jittered TTL', async () => {
     const testKey = 'testkey123';
-    const testId = '01927e00-0000-7000-8000-000000000099';
+    const testId = crypto.randomUUID();
     const testUrl = 'https://example.com/test-destination';
 
     await setCachedUrl(testKey, testId, testUrl);
