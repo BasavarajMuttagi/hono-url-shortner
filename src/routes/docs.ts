@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { swaggerUI } from '@hono/swagger-ui';
 import type { AppEnv } from '../types/env.js';
 
-export const docsApp = new Hono<AppEnv>();
+export const docsRouter = new Hono<AppEnv>();
 
 const openApiSpec = {
   openapi: '3.1.0',
@@ -58,15 +58,15 @@ const openApiSpec = {
           },
         },
         responses: {
-          '201': { description: 'User successfully registered' },
-          '400': { description: 'Invalid input or unable to complete registration' },
+          '201': { description: 'User created' },
+          '400': { description: 'Validation error or email taken' },
         },
       },
     },
     '/api/v1/auth/login': {
       post: {
-        summary: 'User Login',
-        description: 'Authenticates credentials and sets HttpOnly auth_token cookie.',
+        summary: 'Login User',
+        description: 'Authenticates credentials and returns signed JWT.',
         requestBody: {
           required: true,
           content: {
@@ -83,17 +83,16 @@ const openApiSpec = {
           },
         },
         responses: {
-          '200': { description: 'Login successful' },
+          '200': { description: 'Authenticated successfully' },
           '401': { description: 'Invalid email or password' },
         },
       },
     },
     '/api/v1/auth/me': {
       get: {
-        summary: 'Current User Profile',
-        description: 'Returns profile of currently authenticated user from HttpOnly cookie or Bearer token.',
+        summary: 'Get Current Authenticated User',
         responses: {
-          '200': { description: 'User profile details' },
+          '200': { description: 'User profile with API key' },
           '401': { description: 'Unauthorized' },
         },
       },
@@ -101,7 +100,7 @@ const openApiSpec = {
     '/api/v1/urls': {
       post: {
         summary: 'Create Shortened URL',
-        description: 'Shortens a destination URL, generating a collision-resistant 7-character Base62 short key.',
+        description: 'Creates a shortened URL with optional custom short key and expiration date.',
         requestBody: {
           required: true,
           content: {
@@ -111,7 +110,8 @@ const openApiSpec = {
                 required: ['original_url'],
                 properties: {
                   original_url: { type: 'string', format: 'uri' },
-                  title: { type: 'string' },
+                  custom_key: { type: 'string', minLength: 3, maxLength: 30 },
+                  expires_at: { type: 'string', format: 'date-time' },
                 },
               },
             },
@@ -120,12 +120,13 @@ const openApiSpec = {
         responses: {
           '201': { description: 'Shortened URL created' },
           '400': { description: 'Validation error' },
-          '429': { description: 'Rate limit exceeded' },
+          '409': { description: 'Custom key already in use' },
+          '429': { description: 'Rate limit exceeded (100 req/min)' },
         },
       },
       get: {
         summary: 'List User URLs',
-        description: 'Returns paginated list of short URLs belonging to the authenticated user.',
+        description: 'Paginated listing of URLs created by the authenticated user.',
         parameters: [
           { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
           { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
@@ -137,15 +138,15 @@ const openApiSpec = {
     },
     '/api/v1/urls/{id}': {
       get: {
-        summary: 'Get URL Metadata',
+        summary: 'Get URL Details',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
-          '200': { description: 'URL metadata' },
+          '200': { description: 'URL details' },
           '404': { description: 'URL not found' },
         },
       },
       delete: {
-        summary: 'Delete Short URL',
+        summary: 'Deactivate / Delete URL',
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'URL deactivated and purged from cache' },
@@ -185,5 +186,5 @@ const openApiSpec = {
   },
 };
 
-docsApp.get('/docs/openapi.json', (c) => c.json(openApiSpec));
-docsApp.get('/docs', swaggerUI({ url: '/docs/openapi.json' }));
+docsRouter.get('/docs/openapi.json', (c) => c.json(openApiSpec));
+docsRouter.get('/docs', swaggerUI({ url: '/docs/openapi.json' }));

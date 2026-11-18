@@ -1,19 +1,19 @@
 import { Hono } from 'hono';
 import { etag } from 'hono/etag';
 import { eq, and } from 'drizzle-orm';
-import { db, urls } from '../db/index.js';
-import { clickhouse } from '../clickhouse/client.js';
-import { authGuard } from '../middleware/auth.js';
-import type { AppEnv } from '../types/env.js';
-import type { AnalyticsResponse } from '../types/models.js';
+import { db, urls } from '../../db/index.js';
+import { clickhouse } from '../../clickhouse/client.js';
+import { authGuard } from '../../middleware/auth.js';
+import type { AppEnv } from '../../types/env.js';
+import type { AnalyticsResponse } from '../../types/models.js';
 
-export const analyticsApp = new Hono<AppEnv>();
+export const analyticsRouter = new Hono<AppEnv>();
 
 // Analytics endpoint is secured with authGuard and leverages standard Hono ETag middleware
-analyticsApp.use('/api/v1/urls/:id/analytics', authGuard);
-analyticsApp.use('/api/v1/urls/:id/analytics', etag({ weak: true }));
+analyticsRouter.use('/urls/:id/analytics', authGuard);
+analyticsRouter.use('/urls/:id/analytics', etag({ weak: true }));
 
-analyticsApp.get('/api/v1/urls/:id/analytics', async (c) => {
+analyticsRouter.get('/urls/:id/analytics', async (c) => {
   const urlId = c.req.param('id');
   const userId = c.get('userId');
 
@@ -21,56 +21,57 @@ analyticsApp.get('/api/v1/urls/:id/analytics', async (c) => {
     return c.json({ error: 'URL ID is required' }, 400);
   }
 
-  // 1. Verify URL existence and ownership
-  const urlRows = await db
-    .select({
-      id: urls.id,
-      shortKey: urls.shortKey,
-      userId: urls.userId,
-    })
-    .from(urls)
-    .where(and(eq(urls.id, urlId), eq(urls.userId, userId)))
-    .limit(1);
-
-  if (urlRows.length === 0) {
-    return c.json({ error: 'URL not found or unauthorized' }, 404);
-  }
-
-  const urlRecord = urlRows[0];
-
-  // 2. Parallel vectorized aggregation queries in ClickHouse
-  const [
-    summaryResult,
-    timeseriesResult,
-    countriesResult,
-    referrersResult,
-    devicesResult,
-    browsersResult,
-    osResult,
-  ] = await Promise.all([
-    // Overall totals
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            count() as total_clicks,
-            uniq(ip_hash) as unique_visitors
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
-        `,
-        query_params: { urlId },
+  try {
+    // 1. Verify URL existence and ownership
+    const urlRows = await db
+      .select({
+        id: urls.id,
+        shortKey: urls.shortKey,
+        userId: urls.userId,
       })
-      .then((r) => r.json<{ total_clicks: string; unique_visitors: string }>()),
+      .from(urls)
+      .where(and(eq(urls.id, urlId), eq(urls.userId, userId)))
+      .limit(1);
 
-    // Daily timeseries
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            toString(toDate(timestamp)) as date,
-            count() as clicks
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
+    if (urlRows.length === 0) {
+      return c.json({ error: 'URL not found or unauthorized' }, 404);
+    }
+
+    const urlRecord = urlRows[0];
+
+    // 2. Parallel vectorized aggregation queries in ClickHouse
+    const [
+      summaryResult,
+      timeseriesResult,
+      countriesResult,
+      referrersResult,
+      devicesResult,
+      browsersResult,
+      osResult,
+    ] = await Promise.all([
+      // Overall totals
+      clickhouse
+        .query({
+          query: `
+            SELECT 
+              count() as total_clicks,
+              uniq(ip_hash) as unique_visitors
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
+          `,
+          query_params: { urlId },
+        })
+        .then((r) => r.json<{ total_clicks: string; unique_visitors: string }>()),
+
+      // Daily timeseries
+      clickhouse
+        .query({
+          query: `
+            SELECT 
+              toString(toDate(timestamp)) as date,
+              count() as clicks
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
           GROUP BY date
           ORDER BY date ASC
         `,
@@ -198,4 +199,8 @@ analyticsApp.get('/api/v1/urls/:id/analytics', async (c) => {
 
   c.header('Cache-Control', 'private, no-cache');
   return c.json(responseData, 200);
+} catch (err: unknown) {
+  console.error('❌ [analyticsRouter] Error querying ClickHouse analytics:', err instanceof Error ? err.message : err);
+  return c.json({ error: 'Internal server error querying analytics' }, 500);
+}
 });

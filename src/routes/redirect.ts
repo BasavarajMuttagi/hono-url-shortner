@@ -9,7 +9,7 @@ import { env } from '../config/env.js';
 import type { CachedURL } from '../types/models.js';
 import type { AppEnv } from '../types/env.js';
 
-export const redirectApp = new Hono<AppEnv>();
+export const redirectRouter = new Hono<AppEnv>();
 
 // Dedicated SingleFlight instance for redirect lookups
 const sf = new AsyncSingleFlight<CachedURL>();
@@ -24,9 +24,10 @@ const RESERVED_KEYS = new Set([
   'api',
   'dashboard',
   'login',
+  'register',
 ]);
 
-redirectApp.get('/:shortKey', async (c) => {
+redirectRouter.get('/:shortKey', async (c) => {
   const rawKey = c.req.param('shortKey')?.trim();
   if (!rawKey || RESERVED_KEYS.has(rawKey)) {
     return c.json({ error: 'Short URL not found' }, 404);

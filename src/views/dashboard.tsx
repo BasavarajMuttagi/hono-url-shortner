@@ -19,10 +19,10 @@ import { hashPassword, verifyPassword } from '../helpers/password.js';
 import { purgeCacheKey } from '../cache/redis.js';
 import type { AppEnv } from '../types/env.js';
 
-export const dashboardApp = new Hono<AppEnv>();
+export const dashboardRouter = new Hono<AppEnv>();
 
 // Register Hono JSX renderer middleware (official Hono JSX guide pattern)
-dashboardApp.use('*', renderer);
+dashboardRouter.use('*', renderer);
 
 const COOKIE_NAME = 'auth_token';
 
@@ -63,21 +63,21 @@ async function resolveUserFromCookie(c: any) {
 // ==========================================
 
 // Root route: Navigate based on authentication state
-dashboardApp.get('/', async (c) => {
+dashboardRouter.get('/', async (c) => {
   const user = await resolveUserFromCookie(c);
   if (user) return c.redirect('/dashboard');
   return c.redirect('/login');
 });
 
 // GET /login — Render Login Page
-dashboardApp.get('/login', async (c) => {
+dashboardRouter.get('/login', async (c) => {
   const user = await resolveUserFromCookie(c);
   if (user) return c.redirect('/dashboard');
   return c.render(<AuthPage mode="login" />, { title: 'Sign In — Hono URL Engine' });
 });
 
 // POST /login — Handle native form login submission
-dashboardApp.post('/login', async (c) => {
+dashboardRouter.post('/login', async (c) => {
   const body = await c.req.parseBody();
   const email = String(body.email || '').trim();
   const password = String(body.password || '');
@@ -124,14 +124,14 @@ dashboardApp.post('/login', async (c) => {
 });
 
 // GET /register — Render Register Page
-dashboardApp.get('/register', async (c) => {
+dashboardRouter.get('/register', async (c) => {
   const user = await resolveUserFromCookie(c);
   if (user) return c.redirect('/dashboard');
   return c.render(<AuthPage mode="register" />, { title: 'Create Account — Hono URL Engine' });
 });
 
 // POST /register — Handle native form registration
-dashboardApp.post('/register', async (c) => {
+dashboardRouter.post('/register', async (c) => {
   const body = await c.req.parseBody();
   const email = String(body.email || '').trim();
   const password = String(body.password || '');
@@ -189,12 +189,12 @@ dashboardApp.post('/register', async (c) => {
 });
 
 // Sign Out (supports both GET and POST for native navigation)
-dashboardApp.get('/logout', async (c) => {
+dashboardRouter.get('/logout', async (c) => {
   deleteCookie(c, COOKIE_NAME, { path: '/' });
   return c.redirect('/login');
 });
 
-dashboardApp.post('/logout', async (c) => {
+dashboardRouter.post('/logout', async (c) => {
   deleteCookie(c, COOKIE_NAME, { path: '/' });
   return c.redirect('/login');
 });
@@ -361,7 +361,7 @@ export const DashboardPage: FC<DashboardPageProps> = ({ user, urls, baseUrl }) =
 // 3. Dashboard View Route
 // ==========================================
 
-dashboardApp.get('/dashboard', async (c) => {
+dashboardRouter.get('/dashboard', async (c) => {
   const user = await resolveUserFromCookie(c);
   if (!user) return c.redirect('/login');
 
@@ -384,7 +384,7 @@ dashboardApp.get('/dashboard', async (c) => {
 // ==========================================
 
 // Create Link Action
-dashboardApp.post('/dashboard/links', async (c) => {
+dashboardRouter.post('/dashboard/links', async (c) => {
   const user = await resolveUserFromCookie(c);
   if (!user) return c.redirect('/login');
 
@@ -432,7 +432,7 @@ dashboardApp.post('/dashboard/links', async (c) => {
 });
 
 // Delete Link Action
-dashboardApp.post('/dashboard/links/:id/delete', async (c) => {
+dashboardRouter.post('/dashboard/links/:id/delete', async (c) => {
   const user = await resolveUserFromCookie(c);
   if (!user) return c.redirect('/login');
 
@@ -450,3 +450,6 @@ dashboardApp.post('/dashboard/links/:id/delete', async (c) => {
 
   return c.redirect('/dashboard');
 });
+
+// Alias for backward compatibility
+export const dashboardApp = dashboardRouter;

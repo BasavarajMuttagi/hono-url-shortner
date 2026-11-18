@@ -6,13 +6,22 @@ import { clickhouse } from '../clickhouse/client.js';
 import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
-export const metricsApp = new Hono<AppEnv>();
+export const metricsRouter = new Hono<AppEnv>();
+
+// 5-second in-memory cache to prevent connection pool exhaustion during rapid healthcheck probes
+let cachedHealthResult: { isHealthy: boolean; services: { postgres: string; valkey: string; clickhouse: string } } | null = null;
+let lastHealthCheckTime = 0;
+const HEALTH_CACHE_TTL_MS = 5000;
 
 /**
- * Validates backing service connectivity in parallel.
- * Fails if any critical tier (Postgres, Valkey, ClickHouse) is unreachable.
+ * Validates backing service connectivity in parallel with 5s caching.
  */
 async function checkServicesHealth() {
+  const now = Date.now();
+  if (cachedHealthResult && now - lastHealthCheckTime < HEALTH_CACHE_TTL_MS) {
+    return cachedHealthResult;
+  }
+
   const [dbOk, redisOk, chOk] = await Promise.all([
     db
       .execute(sql`SELECT 1`)
@@ -28,7 +37,7 @@ async function checkServicesHealth() {
       .catch(() => false),
   ]);
 
-  return {
+  cachedHealthResult = {
     isHealthy: dbOk && redisOk && chOk,
     services: {
       postgres: dbOk ? 'up' : 'down',
@@ -36,16 +45,16 @@ async function checkServicesHealth() {
       clickhouse: chOk ? 'up' : 'down',
     },
   };
+  lastHealthCheckTime = now;
+
+  return cachedHealthResult;
 }
 
 /**
  * 1. Deep Readiness Health Check (GET /health & GET /health/ready)
- * Actively checks database, cache, and OLAP analytics storage.
- * Returns HTTP 200 if all backing tiers are operational.
- * Returns HTTP 503 Service Unavailable if any tier fails,
- * prompting Docker, Kubernetes, or GCP LB to immediately stop routing traffic.
+ * Verifies Postgres, Valkey, and ClickHouse. Returns 503 if any service drops.
  */
-metricsApp.get('/health', async (c) => {
+metricsRouter.get('/health', async (c) => {
   const { isHealthy, services } = await checkServicesHealth();
   const statusCode = isHealthy ? 200 : 503;
 
@@ -61,7 +70,7 @@ metricsApp.get('/health', async (c) => {
   );
 });
 
-metricsApp.get('/health/ready', async (c) => {
+metricsRouter.get('/health/ready', async (c) => {
   const { isHealthy, services } = await checkServicesHealth();
   return c.json(
     {
@@ -74,9 +83,9 @@ metricsApp.get('/health/ready', async (c) => {
 
 /**
  * 2. Shallow Liveness Health Check (GET /health/live)
- * Pure process/event loop responsiveness ping for Kubernetes livenessProbe.
+ * Pure event loop check for Kubernetes livenessProbe.
  */
-metricsApp.get('/health/live', (c) => {
+metricsRouter.get('/health/live', (c) => {
   return c.json({
     status: 'alive',
     uptimeSeconds: Math.floor(process.uptime()),
@@ -86,7 +95,7 @@ metricsApp.get('/health/live', (c) => {
 /**
  * 3. Detailed Telemetry & Metrics (GET /metrics)
  */
-metricsApp.get('/metrics', async (c) => {
+metricsRouter.get('/metrics', async (c) => {
   // Check PostgreSQL latency
   const pgStart = performance.now();
   let pgStatus = 'down';
