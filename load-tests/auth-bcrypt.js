@@ -9,7 +9,8 @@ export const options = {
   ],
   thresholds: {
     'http_req_failed': ['rate<0.01'],
-    'http_req_duration': ['p(95)<500'],
+    // 20 concurrent VUs hammering bcrypt 10 salt rounds queue in Node's libuv threadpool
+    'http_req_duration': ['p(95)<700'],
   },
 };
 

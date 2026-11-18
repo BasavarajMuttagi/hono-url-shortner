@@ -44,6 +44,20 @@ describe('JWT & Cookie Authentication Integration Tests', () => {
     }
   });
 
+  it('should return a non-revealing generic error if registering an existing email (prevent enumeration)', async () => {
+    const res = await app.request('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testEmail, password: 'DifferentPassword123!' }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain('Unable to complete registration');
+    // Ensure it does NOT leak user enumeration keywords like "already exists"
+    expect(body.error).not.toContain('already exists');
+  });
+
   it('should log in existing user and return signed JWT + cookie', async () => {
     const res = await app.request('/api/v1/auth/login', {
       method: 'POST',

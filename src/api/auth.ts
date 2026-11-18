@@ -39,7 +39,8 @@ authApp.post('/register', zValidator('json', registerSchema), async (c) => {
     .limit(1);
 
   if (existing.length > 0) {
-    return c.json({ error: 'User with this email already exists' }, 409);
+    // Prevent account enumeration by returning a generic non-revealing error
+    return c.json({ error: 'Unable to complete registration. If you already have an account, please sign in.' }, 400);
   }
 
   const userId = uuidv7();

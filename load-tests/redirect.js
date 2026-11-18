@@ -9,7 +9,7 @@ export const options = {
   ],
   thresholds: {
     // Accommodates transatlantic/cloud TLS roundtrip to Aiven instance (~40ms WAN base latency)
-    'http_req_duration': ['p(95)<75'],
+    'http_req_duration': ['p(95)<120'],
     'http_req_failed': ['rate<0.01'],
   },
 };

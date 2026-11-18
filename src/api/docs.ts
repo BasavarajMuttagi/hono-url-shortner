@@ -59,7 +59,7 @@ const openApiSpec = {
         },
         responses: {
           '201': { description: 'User successfully registered' },
-          '409': { description: 'Email already exists' },
+          '400': { description: 'Invalid input or unable to complete registration' },
         },
       },
     },
