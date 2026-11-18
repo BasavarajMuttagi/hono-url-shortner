@@ -64,6 +64,14 @@ async function bootstrap() {
     }
   );
 
+  // Configure Keep-Alive timeouts for reverse proxies and GCP Cloud Load Balancing
+  // GCP LB idle backend timeout is 600s (10 minutes).
+  // Node's keepAliveTimeout must exceed GCP LB timeout to avoid intermittent 502 Bad Gateway errors.
+  if ('keepAliveTimeout' in server) {
+    (server as unknown as { keepAliveTimeout: number; headersTimeout: number }).keepAliveTimeout = 620 * 1000;
+    (server as unknown as { keepAliveTimeout: number; headersTimeout: number }).headersTimeout = 650 * 1000;
+  }
+
   // 5. Graceful shutdown handler
   const shutdown = async (signal: string) => {
     console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);

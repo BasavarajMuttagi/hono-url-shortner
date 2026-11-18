@@ -41,16 +41,21 @@ async function resolveUserFromCookie(c: any) {
         .limit(1);
       return rows[0] || null;
     }
-  } catch {
+  } catch (_err: unknown) {
     // If not valid JWT, check if it's an API key
+  }
+
+  try {
     const rows = await db
       .select({ id: users.id, email: users.email, apiKey: users.apiKey })
       .from(users)
       .where(eq(users.apiKey, token))
       .limit(1);
     return rows[0] || null;
+  } catch (err: unknown) {
+    console.error('❌ [resolveUserFromCookie] Database query error:', err instanceof Error ? err.message : err);
+    return null;
   }
-  return null;
 }
 
 // ==========================================

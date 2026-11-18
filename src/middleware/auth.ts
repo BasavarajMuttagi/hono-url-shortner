@@ -38,36 +38,41 @@ export const authGuard = createMiddleware<AppEnv>(async (c, next) => {
       await next();
       return;
     }
-  } catch (err) {
-    // If not a valid JWT, fall through to check API key
+  } catch (_err: unknown) {
+    // If not a valid JWT (or expired/malformed), fall through to check API key
   }
 
   // 2. Fallback: Check as API key (Valkey cache + PostgreSQL fallback)
   let userId: string | null = null;
   try {
     userId = await redis.get(`auth:${token}`);
-  } catch (err) {
-    // non-fatal
+  } catch (err: unknown) {
+    console.warn('⚠️ [authGuard] Valkey cache lookup failed, falling back to database:', err instanceof Error ? err.message : err);
   }
 
   if (!userId) {
-    const rows = await db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(eq(users.apiKey, token))
-      .limit(1);
+    try {
+      const rows = await db
+        .select({ id: users.id, email: users.email })
+        .from(users)
+        .where(eq(users.apiKey, token))
+        .limit(1);
 
-    if (rows.length === 0) {
-      return c.json({ error: 'Unauthorized: Invalid token or API key' }, 401);
+      if (rows.length === 0) {
+        return c.json({ error: 'Unauthorized: Invalid token or API key' }, 401);
+      }
+
+      userId = rows[0].id;
+    } catch (dbErr: unknown) {
+      console.error('❌ [authGuard] Database error during API key verification:', dbErr instanceof Error ? dbErr.message : dbErr);
+      return c.json({ error: 'Internal server error during authentication' }, 500);
     }
-
-    userId = rows[0].id;
 
     // Cache valid API key -> userId mapping for 1 hour
     try {
       await redis.set(`auth:${token}`, userId, 'EX', 3600);
-    } catch (err) {
-      // non-fatal
+    } catch (err: unknown) {
+      console.warn('⚠️ [authGuard] Failed to cache API key to Valkey:', err instanceof Error ? err.message : err);
     }
   }
 
