@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: hono-url-shortner
-  labels:
-    app.kubernetes.io/name: hono-url-shortner
-    app.kubernetes.io/part-of: url-engine

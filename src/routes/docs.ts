@@ -168,9 +168,30 @@ const openApiSpec = {
     },
     '/health': {
       get: {
-        summary: 'Health Check',
+        summary: 'Deep Readiness Health Check',
+        description: 'Verifies PostgreSQL, Valkey, and ClickHouse connectivity in parallel. Returns 200 if all backing tiers are healthy, or 503 if any tier fails.',
         responses: {
-          '200': { description: 'Service is healthy' },
+          '200': { description: 'All backing services healthy' },
+          '503': { description: 'One or more backing services degraded' },
+        },
+      },
+    },
+    '/health/ready': {
+      get: {
+        summary: 'Readiness Probe',
+        description: 'Alias to deep health check for container orchestrators and load balancers.',
+        responses: {
+          '200': { description: 'Ready to receive traffic' },
+          '503': { description: 'Not ready' },
+        },
+      },
+    },
+    '/health/live': {
+      get: {
+        summary: 'Shallow Liveness Health Check',
+        description: 'Event-loop responsiveness ping for process supervisors and liveness probes.',
+        responses: {
+          '200': { description: 'Process is alive' },
         },
       },
     },
