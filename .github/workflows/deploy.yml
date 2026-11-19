@@ -35,15 +35,16 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          # Extract 7-character short git commit SHA
+          # Convert repository name to lowercase (Docker strictly disallows uppercase letters)
+          IMAGE_NAME="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
 
           # Tag image with both 'latest' and the short commit SHA
           docker build \
-            -t ghcr.io/${{ github.repository }}:latest \
-            -t ghcr.io/${{ github.repository }}:${SHORT_SHA} \
+            -t ${IMAGE_NAME}:latest \
+            -t ${IMAGE_NAME}:${SHORT_SHA} \
             .
 
           # Push both tags
-          docker push ghcr.io/${{ github.repository }}:latest
-          docker push ghcr.io/${{ github.repository }}:${SHORT_SHA}
+          docker push ${IMAGE_NAME}:latest
+          docker push ${IMAGE_NAME}:${SHORT_SHA}
