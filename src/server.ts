@@ -1,7 +1,3 @@
-// Must be the first import to patch HTTP/DB modules before they load
-import './instrumentation.js';
-import { shutdownOtel } from './instrumentation.js';
-
 import { serve } from '@hono/node-server';
 import { showRoutes } from 'hono/dev';
 import { app } from './app.js';
@@ -80,7 +76,6 @@ async function bootstrap() {
       closeDb(),
       closeRedis(),
       closeClickHouse(),
-      shutdownOtel(),
     ]);
     console.log('👋 Clean shutdown complete. Goodbye!');
     process.exit(0);

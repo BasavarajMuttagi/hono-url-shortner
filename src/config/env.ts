@@ -28,13 +28,6 @@ const envSchema = z.object({
   // JWT Secret for Cookie & Token authentication
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters long'),
 
-  // Axiom Cloud Observability & OpenTelemetry
-  AXIOM_TOKEN: z.string().optional(),
-  AXIOM_DATASET: z.string().optional(),
-  AXIOM_METRICS_DATASET: z.string().optional(),
-  AXIOM_URL: z.string().optional(),
-  OTEL_SERVICE_NAME: z.string().optional(),
-
   // Development & Testing Seed Credentials (Imported purely from env)
   SEED_USER_ID: z.string().min(1, 'SEED_USER_ID is required'),
   SEED_USER_EMAIL: z.string().email('SEED_USER_EMAIL must be a valid email'),
