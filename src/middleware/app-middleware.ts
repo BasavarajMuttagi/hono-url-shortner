@@ -1,6 +1,6 @@
 import type { Hono } from 'hono';
-import { logger } from 'hono/logger';
 import { requestId } from 'hono/request-id';
+import { logger } from 'hono/logger';
 import { timing } from 'hono/timing';
 import { secureHeaders } from 'hono/secure-headers';
 import { cors } from 'hono/cors';
@@ -16,13 +16,13 @@ import type { AppEnv } from '../types/env.js';
  * Registers application-level HTTP middleware applied to all incoming requests.
  */
 export function setupAppMiddleware(app: Hono<AppEnv>): void {
-  // 1. Built-in Hono HTTP Logger
-  app.use('*', logger());
-
-  // 2. Unique Request ID (UUID) attached to response headers
+  // 1. Request ID (default: X-Request-Id header & crypto.randomUUID)
   app.use('*', requestId());
 
-  // 2. Server-Timing headers (durations for cache, db, etc.)
+  // 2. Built-in Hono HTTP Logger (default)
+  app.use('*', logger());
+
+  // 3. Server-Timing headers (durations for cache, db, etc.)
   app.use('*', timing());
 
   // 3. Security headers (HSTS, nosniff, etc.)
