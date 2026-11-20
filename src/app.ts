@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import type { AppEnv } from './types/env.js';
-import { setupPipeline } from './middleware/pipeline.js';
+import { setupAppMiddleware } from './middleware/app-middleware.js';
 import { rootRouter } from './routes/index.js';
 
 export const app = new Hono<AppEnv>();
 
-// 1. Global Middleware Pipeline (timing, requestId, secureHeaders, cors, bodyLimit, compression, timeout)
-setupPipeline(app);
+// 1. Mount Application Middleware (logger, requestId, timing, secureHeaders, cors, compress, prettyJSON, bodyLimit, timeout)
+setupAppMiddleware(app);
 
 // 2. Global Error Boundary
 app.onError((err, c) => {

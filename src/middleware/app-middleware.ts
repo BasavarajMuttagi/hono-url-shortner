@@ -13,10 +13,13 @@ import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
 /**
- * Attaches the standard middleware pipeline to the Hono application.
+ * Registers application-level HTTP middleware applied to all incoming requests.
  */
-export function setupPipeline(app: Hono<AppEnv>): void {
-  // 1. Unique Request ID (UUID) attached to response headers
+export function setupAppMiddleware(app: Hono<AppEnv>): void {
+  // 1. Built-in Hono HTTP Logger
+  app.use('*', logger());
+
+  // 2. Unique Request ID (UUID) attached to response headers
   app.use('*', requestId());
 
   // 2. Server-Timing headers (durations for cache, db, etc.)
@@ -56,9 +59,4 @@ export function setupPipeline(app: Hono<AppEnv>): void {
 
   // 9. Timeout deadline (3 seconds)
   app.use('*', timeout(3000));
-
-  // 10. Dev logger (omitted in test/production to maintain high throughput)
-  if (env.NODE_ENV === 'development') {
-    app.use('*', logger());
-  }
 }
