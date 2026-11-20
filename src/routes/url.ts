@@ -99,7 +99,7 @@ urlRouter.post('/urls', linkCreateRateLimiter, zValidator('json', createUrlSchem
     // Pre-populate Valkey cache (<1ms subsequent lookups)
     await setCachedUrl(shortKey, created.id, created.originalUrl);
 
-    const baseUrl = env.BASE_URL.replace(/\/+$/, '');
+    const baseUrl = new URL(c.req.url).origin;
     return c.json(
       {
         id: created.id,
@@ -135,7 +135,7 @@ urlRouter.get('/urls/:id', async (c) => {
     }
 
     const record = rows[0];
-    const baseUrl = env.BASE_URL.replace(/\/+$/, '');
+    const baseUrl = new URL(c.req.url).origin;
     return c.json({
       id: record.id,
       short_key: record.shortKey,
@@ -168,7 +168,7 @@ urlRouter.get('/urls', async (c) => {
       .limit(limit)
       .offset(offset);
 
-    const baseUrl = env.BASE_URL.replace(/\/+$/, '');
+    const baseUrl = new URL(c.req.url).origin;
     const items = rows.map((r) => ({
       id: r.id,
       short_key: r.shortKey,

@@ -371,7 +371,7 @@ dashboardRouter.get('/dashboard', async (c) => {
     .where(eq(urls.userId, user.id))
     .orderBy(desc(urls.createdAt));
 
-  const baseUrl = env.BASE_URL.replace(/\/+$/, '');
+  const baseUrl = new URL(c.req.url).origin;
 
   return c.render(
     <DashboardPage user={user} urls={userUrls} baseUrl={baseUrl} />,
