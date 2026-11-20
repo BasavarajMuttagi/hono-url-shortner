@@ -16,7 +16,8 @@ docker pull ghcr.io/basavarajmuttagi/hono-url-shortner:latest
 gcloud secrets versions access latest --secret="hono-env" > /dev/shm/hono.env
 chmod 600 /dev/shm/hono.env
 
-# 5. Launch container with secrets from RAM
+# 5. Launch container with secrets from RAM (stop old one if running)
+docker rm -f hono-app 2>/dev/null || true
 docker run -d \
   --name hono-app \
   --restart=always \
