@@ -180,82 +180,77 @@ npm run db:clean          # Purge test users, URLs, and ClickHouse events
 
 ---
 
-## 📊 Cloud Benchmark & Production Load Test (GCP Single-VM)
+## 📊 Empirical Cloud Benchmarks & Load Tests
 
-An empirical multi-stage CRUD load test was executed directly against a live remote GCP instance to measure realistic cloud performance under concurrent stress.
-
-### 1. Environment & Machine Architecture
-
-| Component | Specification / Configuration |
-| :--- | :--- |
-| **Cloud Provider & Region** | Google Cloud Platform (GCP) Compute Engine — `asia-south1-a` (Mumbai, India) |
-| **Machine Type** | `e2-standard-4` (4 vCPUs, 16 GB RAM, 10 GB pd-standard boot disk) |
-| **Operating System** | Ubuntu 22.04 LTS (`x86_64`) |
-| **Container Engine** | Docker 29.1.3 (`--network=host`) running `ghcr.io/basavarajmuttagi/hono-url-shortner:latest` |
-| **Process Clustering** | **PM2 Cluster Mode** (`pm2-runtime start dist/server.js -i max`), running 4 worker processes pinned across all 4 vCPUs |
-| **Secret Provisioning** | Google Cloud Secret Manager (`hono-env`) streamed into RAM tmpfs (`/dev/shm/hono.env`, `chmod 600`) and immediately deleted (zero persistent disk exposure) |
-| **Managed PostgreSQL** | Aiven PostgreSQL 18.7 (2 vCPUs, 4 GB RAM, 80 GB NVMe SSD, `Connection limit: 100`, client pool `max: 7` per worker process) |
-| **Managed In-Memory Cache** | Aiven Valkey (Redis-compatible, TLS enabled) |
-| **Managed OLAP Analytics** | Aiven ClickHouse Cloud (vectorized clickstream analytics) |
+Comprehensive in-cloud load tests were executed using **Grafana k6** running from dedicated generator VMs (`load-generator-vm` in `asia-south1-c`) directly against the live infrastructure to eliminate WAN/WiFi jitter and evaluate real-world system behavior across three architectural topologies.
 
 ---
 
-### 2. Workload & Stage Configuration
+### 1. Head-to-Head Comparison: Single-Core vs. Cluster vs. Industry Baseline
 
-* **Tool**: Grafana k6
-* **Client Location**: External client machine connecting over public WAN to `http://34.93.1.248:8080/`
-* **Duration**: 2 minutes (122 seconds total including ramp-down)
-* **Stage Progression**:
-  * **Stage 1 (0:00 – 0:15)**: Warmup ramp from 1 to 20 Virtual Users (VUs)
-  * **Stage 2 (0:15 – 0:50)**: Sustained normal load at 50 VUs
-  * **Stage 3 (0:50 – 1:30)**: Heavy stress ramp to 80 VUs (saturating all 4 vCPUs)
-  * **Stage 4 (1:30 – 1:45)**: Peak spike test at 100 VUs
-  * **Stage 5 (1:45 – 2:00)**: Cooldown recovery ramp down to 0 VUs
-* **Operation Distribution**:
-  * **70% Hot-Path Redirects** (`GET /:shortKey`): Valkey $O(1)$ memory lookup + background ClickHouse event stream
-  * **12% Paginated URL Lists** (`GET /api/v1/urls?page=X`): PostgreSQL relational reads
-  * **8% Analytics Queries** (`GET /api/v1/urls/:id/analytics`): ClickHouse columnar aggregation queries
-  * **6% Link Creation** (`POST /api/v1/urls`): PostgreSQL write + Base62 key generation + Valkey cache hydration
-  * **4% Link Deletion** (`DELETE /api/v1/urls/:id`): PostgreSQL row delete + Valkey cache purge
+The benchmark below compares our production Hono stack against industry standards, including the viral systems benchmark testing Node 22 on a $12 single-core/2GB VPS:
 
----
-
-### 3. Actual Benchmark Results (k6 Raw Telemetry)
-
-#### Performance Metrics Table
-| Metric | Value | Details |
-| :--- | :--- | :--- |
-| **Total Requests Completed** | **27,338** | Across 27,323 completed iterations |
-| **Test Duration** | **2m 02.4s** | 5 staged concurrency phases |
-| **Sustained Throughput** | **223.33 req/sec** | Mixed read/write/analytics operations |
-| **Network Data Received** | **29 MB** | 236 kB/sec sustained transfer |
-| **Network Data Sent** | **4.0 MB** | 33 kB/sec sustained transfer |
-| **Total Validation Checks** | **51,303** | 48,653 succeeded (94.83%), 2,650 rate-limited (5.16%) |
-
-#### Per-Operation Latency Breakdown (Over Public WAN)
-*All latencies include transatlantic/public WAN network round-trip time between client and Mumbai datacenter (~50ms base RTT).*
-
-| Operation | Requests Share | Average | Median (`med`) | p(90) | p(95) | Min | Max | Success Rate |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Redirect** (`GET /:shortKey`) | 70% | 74.61 ms | **59.00 ms** | 124.00 ms | 137.00 ms | 49.00 ms | 404.00 ms | **100%** |
-| **List URLs** (`GET /urls`) | 12% | 114.34 ms | **94.00 ms** | 167.00 ms | 179.00 ms | 81.00 ms | 423.00 ms | **100%** |
-| **Create URL** (`POST /urls`) | 6% | 120.24 ms | **96.00 ms** | 170.00 ms | 190.40 ms | 78.00 ms | 399.00 ms | *Rate-limited* |
-| **Delete URL** (`DELETE /urls/:id`) | 4% | 350.36 ms | **237.50 ms** | 672.90 ms | 994.70 ms | 151.00 ms | 1,619.00 ms | **100%** |
-| **Analytics** (`GET /analytics`) | 8% | 536.42 ms | **371.00 ms** | 1,177.60 ms | 1,481.15 ms | 165.00 ms | 2,202.00 ms | **100%** |
-| **Overall HTTP Duration** | **100%** | **121.09 ms** | **64.64 ms** | **179.68 ms** | **341.42 ms** | **33.88 ms** | **2.20 s** | **95.16%** |
-
-> **Rate Limit Note (`429 Too Many Requests`)**:
-> During the test, 1,325 link creation requests (4.84% of total requests) received HTTP 429. This was not a server error; the application's sliding-window rate limiter in `src/middleware/ratelimit.ts` correctly enforced the security threshold of **100 link creations/minute per user**. Because all 100 concurrent VUs operated under the same fixture API key, they saturated the limit within the first ~20 seconds of each minute. All other operations (redirects, lists, analytics, deletes) achieved **100% success**.
+| Metric / Dimension | 📹 YouTube VPS Benchmark | 🌐 TechEmpower R23 (Node + DB) | 🧪 Our 1-Core Replica (`yt-benchmark-vm`) | 🚀 Our 3-VM Cluster + Cloud LB |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute Hardware** | 1 shared core (2.3 GHz), 2 GB RAM | Dedicated physical cores | **1 shared vCPU** (`e2-small`), 2 GB RAM | **12 vCPUs** (3 $\times$ `e2-standard-4`), 48 GB RAM |
+| **Ingress / Network** | Direct public IP (0 LB) | Loopback / Internal LAN | Direct Internal VPC IP (`10.160.0.11`, 0 LB) | **Google Global Application Load Balancer** |
+| **App Runtime** | Node 22 + Express 5 (Single process) | Node 22 + Fastify/Node | **Node 22 + Hono v4** (PM2 Cluster) | **Node 22 + Hono v4** (PM2 Cluster, 12 workers) |
+| **Storage Architecture**| **Colocated Postgres** (Local disk) | Colocated DB | **Distributed Cloud** (Aiven Postgres + Valkey + ClickHouse) | **Distributed Cloud** (Aiven Postgres + Valkey + ClickHouse) |
+| **Caching Layer** | ❌ None (100% DB hits) | ❌ None | ✅ **Valkey 4GB** (Cache-aside + 30s OLAP cache) | ✅ **Valkey 4GB** (Cache-aside + 30s OLAP cache) |
+| **Test Concurrency** | 2,500 – 3,250 VUs (with 3–7s sleep) | High-volume loop | 50 VUs (Active continuous loop) | **900 VUs** (4-stage aggressive stress ramp) |
+| **Sustained Throughput**| **300 req/sec** | ~1,200 – 2,500 req/s (per core) | **157.02 req/sec** | **3,436.30 req/sec** (Peak **3,805.86 req/s**) |
+| **Equiv. Active Users** | **~3,250 users** (at 0.1 RPS/user) | N/A | **~1,570 users** (at 0.1 RPS/user) | **~34,360 to ~38,050 active users** |
+| **Median (p50) Latency**| **14 ms** | 3 – 8 ms | **243.92 ms** | **78.00 ms** (Redirects) / **82.10 ms** (All) |
+| **p95 Latency** | **330 ms** | 15 – 30 ms | **995.40 ms** | **208.00 ms** (Redirects) / **270.72 ms** (All) |
+| **Validation Checks** | > 99.0% | > 99.9% | **99.91%** (36,812 / 36,845) | **99.62%** (904,511 / 907,926 passed) |
+| **Rate Limited (429s)** | 0 | 0 | 0 | **14,344 requests** (Protective throttling) |
+| **Actual Server Error** | < 1% | < 0.1% | **0.08%** (17 errors) | **0.70%** (3,415 errors under peak 900 VUs) |
 
 ---
 
-### 4. VM Hardware & Guest Telemetry During Peak Load
+### 2. Enterprise Cluster Stress Benchmark (900 VUs Raw Telemetry)
 
-* **Peak Host CPU Utilization**: **~41.2%** during the 100-VU spike (20% averaged across the 1-minute Cloud Monitoring window).
-* **Container Memory Usage**: **316.4 MiB / 15.62 GiB** (only **1.98%** container memory pressure).
-* **Host OS Total RAM Usage**: **786 MB** used out of 15,990 MB available (~5% total system utilization).
-* **PM2 Worker Health**: **0 process restarts (`↺ 0`)** across all 4 cluster worker processes.
-* **Database Connection Headroom**: The connection pool remained stable throughout the test with zero connection exhaustion errors on Aiven PostgreSQL.
+Executed from `load-generator-vm` via in-cloud network against the Google Global Load Balancer frontend (`http://136.81.105.139`):
+
+#### Workload Profile:
+* **Duration**: 2 minutes 21 seconds
+* **Concurrency**: Up to **900 looping Virtual Users** across 4 aggressive stress stages
+* **Traffic Mix**: 80% Redirects (`GET /:shortKey`), 10% URL Creation (`POST /urls`), 5% Vectorized Analytics (`GET /analytics`), 5% Deletion (`DELETE /urls/:id`)
+
+#### Detailed Latency Breakdown (k6 Telemetry):
+| Operation | Share | Median (`med`) | Average (`avg`) | p(90) | p(95) | Max | Success / Checks |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Redirect** (`GET /:shortKey`) | 80% | **78.00 ms** | 98.69 ms | 149.00 ms | **208.00 ms** | 1.01 s | **100% Passed** |
+| **Create URL** (`POST /urls`) | 10% | **212.00 ms** | 251.17 ms | 351.00 ms | **459.84 ms** | 1.62 s | **100% Passed** |
+| **Analytics** (`GET /analytics`)| 5% | **253.00 ms** | 403.00 ms | 632.00 ms | **902.00 ms** | 3.48 s | **85% Passed** *(Cached)* |
+| **Delete URL** (`DELETE /urls/:id`)| 5% | **349.00 ms** | 379.70 ms | 586.50 ms | **712.00 ms** | 1.09 s | **100% Passed** |
+| **All Expected Requests** | 100% | **82.10 ms** | 118.55 ms | 217.77 ms | **270.72 ms** | 3.00 s | **99.62% Overall** |
+
+* **Total HTTP Requests Completed**: **485,634 requests** (3,436.30 req/sec sustained)
+* **Data Transferred**: **521 MB received**, **71 MB sent** (3.7 MB/s throughput)
+* **Container Health**: PM2 workers sustained zero crashes (`↺ 0`), running at ~5.8% RAM (928 MB / 15.6 GB)
+
+---
+
+### 3. Key Architectural Optimizations & Engineering Verdict
+
+#### 1. ClickHouse Query Consolidation (7 Queries $\rightarrow$ 1 Vectorized Query)
+* **Problem**: Each `/analytics` HTTP request originally triggered 7 individual `SELECT` queries across separate network sockets in `Promise.all`. Under concurrent load, just 8 simultaneous users fired $8 \times 7 = 56$ queries, exceeding Aiven ClickHouse Developer-4's hard ceiling of 50 simultaneous queries (`TOO_MANY_SIMULTANEOUS_QUERIES`).
+* **Fix**: Consolidated all 7 aggregations (totals, timeseries, top countries, referrers, devices, browsers, OS) into a **single multi-aggregation SQL query** using ClickHouse's native `groupArray((key, val))` tuple subqueries.
+* **Impact**: Database engine execution dropped to **36–47 ms** to scan 57,000+ rows, reducing socket contention by 85%.
+
+#### 2. Dual-Layer Caching (Valkey 4GB RAM + 30-Second Response Cache)
+* **Mechanism**: Integrated Valkey cache-aside checking (`analytics:${urlId}`) with a 30-second TTL. The first request fetches from ClickHouse (`X-Cache: MISS`); subsequent requests are served from in-memory Valkey (`X-Cache: HIT`) in **< 1ms**.
+* **Invalidation**: Configured `purgeAnalyticsCache(urlId)` upon URL deletion (`DELETE /api/v1/urls/:id`) to prevent stale telemetry.
+* **Impact**: Cluster throughput surged from 1,807 req/s to **3,436 – 3,805 req/s**, reducing median analytics latency by 91% (from 3.02s down to 253ms).
+
+#### 3. Circuit Breaking & Graceful Throttling
+* **Timeout Protection**: Hono's `timeout(3000)` middleware cuts off hanging queries at 3,000ms, preventing slow analytical queries from monopolizing the Node.js event loop.
+* **Rate Limiting**: Sliding-window rate limiting safely rejected 14,344 abusive requests (`429 Too Many Requests`), protecting PostgreSQL connection pools and keeping actual unhandled errors below 0.7%.
+
+#### 4. Why Horizontal Scaling Outperformed Vertical Single-Core
+* On the 1-core standalone machine (`yt-benchmark-vm`), GCP's `e2-small` hypervisor throttled sustained CPU to 0.5 vCPU after burst credits exhausted, capping throughput at 157 req/s.
+* Scaling horizontally across the 3-VM MIG behind Google Global Cloud Load Balancer distributed traffic symmetrically across all 12 PM2 workers, easily sustaining **3,400+ requests/second (~34,000 active users)** with immense headroom remaining.
 
 ---
 
