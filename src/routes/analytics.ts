@@ -3,6 +3,7 @@ import { etag } from 'hono/etag';
 import { eq, and } from 'drizzle-orm';
 import { db, urls } from '../db/index.js';
 import { clickhouse } from '../clickhouse/client.js';
+import { redis } from '../cache/redis.js';
 import { authGuard } from '../middleware/auth.js';
 import type { AppEnv } from '../types/env.js';
 import type { AnalyticsResponse } from '../types/models.js';
@@ -39,7 +40,20 @@ analyticsRouter.get('/urls/:id/analytics', async (c) => {
 
     const urlRecord = urlRows[0];
 
-    // 2. Single consolidated multi-aggregation query in ClickHouse (reduces ClickHouse connections from 7 to 1)
+    // 2. Check Valkey cache for recent analytics response (TTL: 30 seconds)
+    const cacheKey = `analytics:${urlId}`;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        c.header('X-Cache', 'HIT');
+        c.header('Cache-Control', 'private, max-age=30');
+        return c.json(JSON.parse(cached) as AnalyticsResponse, 200);
+      }
+    } catch (cacheErr) {
+      console.warn('⚠️ [analyticsRouter] Valkey cache read failed, falling back to ClickHouse:', cacheErr);
+    }
+
+    // 3. Single consolidated multi-aggregation query in ClickHouse (reduces ClickHouse connections from 7 to 1)
     const consolidatedQuery = `
       SELECT 
         count() as total_clicks,
@@ -182,8 +196,16 @@ analyticsRouter.get('/urls/:id/analytics', async (c) => {
       })),
     };
 
-  c.header('Cache-Control', 'private, no-cache');
-  return c.json(responseData, 200);
+    // 4. Cache response in Valkey for 30 seconds
+    try {
+      await redis.set(cacheKey, JSON.stringify(responseData), 'EX', 30);
+    } catch (cacheErr) {
+      console.warn('⚠️ [analyticsRouter] Valkey cache write failed:', cacheErr);
+    }
+
+    c.header('X-Cache', 'MISS');
+    c.header('Cache-Control', 'private, max-age=30');
+    return c.json(responseData, 200);
 } catch (err: unknown) {
   console.error('❌ [analyticsRouter] Error querying ClickHouse analytics:', err instanceof Error ? err.message : err);
   return c.json({ error: 'Internal server error querying analytics' }, 500);

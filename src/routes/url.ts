@@ -4,7 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { eq, and, desc } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { db, urls } from '../db/index.js';
-import { setCachedUrl, purgeCacheKey } from '../cache/redis.js';
+import { setCachedUrl, purgeCacheKey, purgeAnalyticsCache } from '../cache/redis.js';
 import { clickhouse } from '../clickhouse/client.js';
 import { generateShortKey } from '../helpers/base62.js';
 import { authGuard } from '../middleware/auth.js';
@@ -206,8 +206,11 @@ urlRouter.delete('/urls/:id', async (c) => {
       return c.json({ error: 'URL not found or already deleted' }, 404);
     }
 
-    // Invalidate cache in Valkey
-    await purgeCacheKey(rows[0].shortKey);
+    // Invalidate caches in Valkey
+    await Promise.all([
+      purgeCacheKey(rows[0].shortKey),
+      purgeAnalyticsCache(rows[0].id),
+    ]);
 
     // Clean up telemetry events in ClickHouse asynchronously
     try {

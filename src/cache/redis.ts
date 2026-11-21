@@ -112,6 +112,17 @@ export async function purgeCacheKey(shortKey: string): Promise<void> {
   }
 }
 
+/**
+ * Purges an analytics cache key from Valkey.
+ */
+export async function purgeAnalyticsCache(urlId: string): Promise<void> {
+  try {
+    await redis.del(`analytics:${urlId}`);
+  } catch (err) {
+    console.error(`⚠️ Redis purge error for analytics ${urlId}:`, err);
+  }
+}
+
 export async function closeRedis(): Promise<void> {
   await redis.quit();
 }
