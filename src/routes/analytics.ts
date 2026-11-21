@@ -39,163 +39,148 @@ analyticsRouter.get('/urls/:id/analytics', async (c) => {
 
     const urlRecord = urlRows[0];
 
-    // 2. Parallel vectorized aggregation queries in ClickHouse
-    const [
-      summaryResult,
-      timeseriesResult,
-      countriesResult,
-      referrersResult,
-      devicesResult,
-      browsersResult,
-      osResult,
-    ] = await Promise.all([
-      // Overall totals
-      clickhouse
-        .query({
-          query: `
-            SELECT 
-              count() as total_clicks,
-              uniq(ip_hash) as unique_visitors
-            FROM click_events
-            WHERE url_id = {urlId: UUID}
-          `,
-          query_params: { urlId },
-        })
-        .then((r) => r.json<{ total_clicks: string; unique_visitors: string }>()),
-
-      // Daily timeseries
-      clickhouse
-        .query({
-          query: `
+    // 2. Single consolidated multi-aggregation query in ClickHouse (reduces ClickHouse connections from 7 to 1)
+    const consolidatedQuery = `
+      SELECT 
+        count() as total_clicks,
+        uniq(ip_hash) as unique_visitors,
+        (
+          SELECT groupArray((date, clicks))
+          FROM (
             SELECT 
               toString(toDate(timestamp)) as date,
               count() as clicks
             FROM click_events
             WHERE url_id = {urlId: UUID}
-          GROUP BY date
-          ORDER BY date ASC
-        `,
-        query_params: { urlId },
-      })
-      .then((r) => r.json<{ date: string; clicks: string }>()),
+            GROUP BY date
+            ORDER BY date ASC
+          )
+        ) as timeseries,
+        (
+          SELECT groupArray((country, count))
+          FROM (
+            SELECT 
+              country,
+              count() as count
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
+            GROUP BY country
+            ORDER BY count DESC
+            LIMIT 10
+          )
+        ) as top_countries,
+        (
+          SELECT groupArray((referrer, count))
+          FROM (
+            SELECT 
+              referrer,
+              count() as count
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
+            GROUP BY referrer
+            ORDER BY count DESC
+            LIMIT 10
+          )
+        ) as top_referrers,
+        (
+          SELECT groupArray((device_type, count))
+          FROM (
+            SELECT 
+              device_type,
+              count() as count
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
+            GROUP BY device_type
+            ORDER BY count DESC
+          )
+        ) as devices,
+        (
+          SELECT groupArray((browser, count))
+          FROM (
+            SELECT 
+              browser,
+              count() as count
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
+            GROUP BY browser
+            ORDER BY count DESC
+            LIMIT 10
+          )
+        ) as browsers,
+        (
+          SELECT groupArray((os, count))
+          FROM (
+            SELECT 
+              os,
+              count() as count
+            FROM click_events
+            WHERE url_id = {urlId: UUID}
+            GROUP BY os
+            ORDER BY count DESC
+            LIMIT 10
+          )
+        ) as operating_systems
+      FROM click_events
+      WHERE url_id = {urlId: UUID}
+    `;
 
-    // Top 10 Countries
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            country as name,
-            count() as count
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
-          GROUP BY country
-          ORDER BY count DESC
-          LIMIT 10
-        `,
-        query_params: { urlId },
-      })
-      .then((r) => r.json<{ name: string; count: string }>()),
+    interface ConsolidatedRow {
+      total_clicks: string;
+      unique_visitors: string;
+      timeseries: [string, string][];
+      top_countries: [string, string][];
+      top_referrers: [string, string][];
+      devices: [string, string][];
+      browsers: [string, string][];
+      operating_systems: [string, string][];
+    }
 
-    // Top 10 Referrers
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            referrer as name,
-            count() as count
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
-          GROUP BY referrer
-          ORDER BY count DESC
-          LIMIT 10
-        `,
-        query_params: { urlId },
-      })
-      .then((r) => r.json<{ name: string; count: string }>()),
+    const chResult = await clickhouse.query({
+      query: consolidatedQuery,
+      query_params: { urlId },
+    });
+    const { data: chData } = await chResult.json<ConsolidatedRow>();
+    const stats: ConsolidatedRow = chData[0] || {
+      total_clicks: '0',
+      unique_visitors: '0',
+      timeseries: [],
+      top_countries: [],
+      top_referrers: [],
+      devices: [],
+      browsers: [],
+      operating_systems: [],
+    };
 
-    // Devices breakdown
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            device_type as name,
-            count() as count
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
-          GROUP BY device_type
-          ORDER BY count DESC
-        `,
-        query_params: { urlId },
-      })
-      .then((r) => r.json<{ name: string; count: string }>()),
-
-    // Browsers breakdown
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            browser as name,
-            count() as count
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
-          GROUP BY browser
-          ORDER BY count DESC
-          LIMIT 10
-        `,
-        query_params: { urlId },
-      })
-      .then((r) => r.json<{ name: string; count: string }>()),
-
-    // Operating systems breakdown
-    clickhouse
-      .query({
-        query: `
-          SELECT 
-            os as name,
-            count() as count
-          FROM click_events
-          WHERE url_id = {urlId: UUID}
-          GROUP BY os
-          ORDER BY count DESC
-          LIMIT 10
-        `,
-        query_params: { urlId },
-      })
-      .then((r) => r.json<{ name: string; count: string }>()),
-  ]);
-
-  const summary = summaryResult.data[0] || { total_clicks: '0', unique_visitors: '0' };
-
-  const responseData: AnalyticsResponse = {
-    urlId: urlRecord.id,
-    shortKey: urlRecord.shortKey,
-    totalClicks: parseInt(summary.total_clicks || '0', 10),
-    uniqueVisitors: parseInt(summary.unique_visitors || '0', 10),
-    timeseries: (timeseriesResult.data || []).map((row) => ({
-      date: row.date,
-      clicks: parseInt(row.clicks, 10),
-    })),
-    topCountries: (countriesResult.data || []).map((row) => ({
-      name: row.name,
-      count: parseInt(row.count, 10),
-    })),
-    topReferrers: (referrersResult.data || []).map((row) => ({
-      name: row.name,
-      count: parseInt(row.count, 10),
-    })),
-    devices: (devicesResult.data || []).map((row) => ({
-      name: row.name,
-      count: parseInt(row.count, 10),
-    })),
-    browsers: (browsersResult.data || []).map((row) => ({
-      name: row.name,
-      count: parseInt(row.count, 10),
-    })),
-    operatingSystems: (osResult.data || []).map((row) => ({
-      name: row.name,
-      count: parseInt(row.count, 10),
-    })),
-  };
+    const responseData: AnalyticsResponse = {
+      urlId: urlRecord.id,
+      shortKey: urlRecord.shortKey,
+      totalClicks: parseInt(stats.total_clicks || '0', 10),
+      uniqueVisitors: parseInt(stats.unique_visitors || '0', 10),
+      timeseries: (stats.timeseries || []).map(([date, clicks]) => ({
+        date,
+        clicks: parseInt(clicks, 10),
+      })),
+      topCountries: (stats.top_countries || []).map(([name, count]) => ({
+        name,
+        count: parseInt(count, 10),
+      })),
+      topReferrers: (stats.top_referrers || []).map(([name, count]) => ({
+        name,
+        count: parseInt(count, 10),
+      })),
+      devices: (stats.devices || []).map(([name, count]) => ({
+        name,
+        count: parseInt(count, 10),
+      })),
+      browsers: (stats.browsers || []).map(([name, count]) => ({
+        name,
+        count: parseInt(count, 10),
+      })),
+      operatingSystems: (stats.operating_systems || []).map(([name, count]) => ({
+        name,
+        count: parseInt(count, 10),
+      })),
+    };
 
   c.header('Cache-Control', 'private, no-cache');
   return c.json(responseData, 200);
