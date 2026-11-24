@@ -37,8 +37,6 @@
     "@hono/node-server": "^2.1.9",
     "@hono/swagger-ui": "^0.6.2",
     "@hono/zod-validator": "^0.9.1",
-    "@mcp-use/inspector": "^20.3.33",
-    "@modelcontextprotocol/sdk": "^1.32.2",
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.45.4",
@@ -53,6 +51,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@mcp-use/inspector": "^20.3.33",
     "@types/bcrypt": "^6.0.0",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.11.10",
