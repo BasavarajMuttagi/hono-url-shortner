@@ -4,6 +4,8 @@ import { urlRouter } from './url.js';
 import { analyticsRouter } from './analytics.js';
 import { metricsRouter } from './metrics.js';
 import { docsRouter } from './docs.js';
+import { mcpRouter } from './mcp.js';
+import { oauthRouter } from './oauth.js';
 import { redirectRouter } from './redirect.js';
 import { dashboardRouter } from '../views/dashboard.js';
 import type { AppEnv } from '../types/env.js';
@@ -55,5 +57,11 @@ rootRouter.route('/api/v1', analyticsRouter);
 // 4. Interactive JSX Web Dashboard
 rootRouter.route('/', dashboardRouter);
 
-// 5. Hot-Path Visitor Redirection
+// 5. OAuth 2.1 Authorization Server, Consent & RFC 9728 Protected Resource Discovery
+rootRouter.route('/', oauthRouter);
+
+// 6. Model Context Protocol (MCP) Server & Dev Inspector
+rootRouter.route('/', mcpRouter);
+
+// 7. Hot-Path Visitor Redirection
 rootRouter.route('/', redirectRouter);

@@ -9,7 +9,6 @@ import { timeout } from 'hono/timeout';
 import { trimTrailingSlash } from 'hono/trailing-slash';
 import { prettyJSON } from 'hono/pretty-json';
 import { bodyLimit } from 'hono/body-limit';
-import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
 /**
@@ -25,8 +24,15 @@ export function setupAppMiddleware(app: Hono<AppEnv>): void {
   // 3. Server-Timing headers (durations for cache, db, etc.)
   app.use('*', timing());
 
-  // 3. Security headers (HSTS, nosniff, etc.)
-  app.use('*', secureHeaders());
+  // 3. Security headers (HSTS, nosniff, etc. Configured for OAuth popup compatibility)
+  app.use(
+    '*',
+    secureHeaders({
+      xFrameOptions: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: false,
+    })
+  );
 
   // 4. Cross-Origin Resource Sharing
   app.use(

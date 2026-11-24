@@ -1,14 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { eq, and, desc } from 'drizzle-orm';
-import { v7 as uuidv7 } from 'uuid';
-import { db, urls } from '../db/index.js';
-import { setCachedUrl, purgeCacheKey, purgeAnalyticsCache } from '../cache/redis.js';
-import { clickhouse } from '../clickhouse/client.js';
-import { generateShortKey } from '../helpers/base62.js';
+import { purgeCacheKey } from '../cache/redis.js';
 import { authGuard } from '../middleware/auth.js';
 import { linkCreateRateLimiter } from '../middleware/ratelimit.js';
+import { UrlService } from '../services/url.service.js';
 import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
@@ -30,21 +26,23 @@ const createUrlSchema = z.object({
   title: z.string().max(255).optional().default(''),
 });
 
-// Cache purge endpoint for stampede and load testing
-urlRouter.delete('/cache/:shortKey', authGuard, async (c) => {
-  const shortKey = c.req.param('shortKey')?.trim();
-  if (!shortKey) {
-    return c.json({ error: 'Missing shortKey parameter' }, 400);
-  }
+// Cache purge endpoint for stampede and load testing (strictly disabled in production)
+if (env.NODE_ENV !== 'production') {
+  urlRouter.delete('/cache/:shortKey', authGuard, async (c) => {
+    const shortKey = c.req.param('shortKey')?.trim();
+    if (!shortKey) {
+      return c.json({ error: 'Missing shortKey parameter' }, 400);
+    }
 
-  try {
-    await purgeCacheKey(shortKey);
-    return c.json({ status: 'purged', key: shortKey });
-  } catch (err: unknown) {
-    console.error('❌ [urlRouter.cachePurge] Error purging cache key:', err instanceof Error ? err.message : err);
-    return c.json({ error: 'Failed to purge cache key' }, 500);
-  }
-});
+    try {
+      await purgeCacheKey(shortKey);
+      return c.json({ status: 'purged', key: shortKey });
+    } catch (err: unknown) {
+      console.error('❌ [urlRouter.cachePurge] Error purging cache key:', err instanceof Error ? err.message : err);
+      return c.json({ error: 'Failed to purge cache key' }, 500);
+    }
+  });
+}
 
 // All /urls routes require authentication (Cookie or Bearer)
 urlRouter.use('/urls/*', authGuard);
@@ -56,50 +54,9 @@ urlRouter.post('/urls', linkCreateRateLimiter, zValidator('json', createUrlSchem
   const userId = c.get('userId');
 
   try {
-    // Scalable, collision-resistant 7-character Base62 key generation
-    let shortKey = '';
-    let attempts = 0;
-    while (!shortKey && attempts < 5) {
-      attempts++;
-      const candidate = generateShortKey(7);
-      const existing = await db
-        .select({ id: urls.id })
-        .from(urls)
-        .where(eq(urls.shortKey, candidate))
-        .limit(1);
-
-      if (existing.length === 0) {
-        shortKey = candidate;
-        break;
-      }
-    }
-
-    if (!shortKey) {
-      return c.json({ error: 'Failed to generate a unique short key, please try again' }, 500);
-    }
-
-    const newId = uuidv7();
-    const now = new Date();
-
-    // Insert into PostgreSQL via Drizzle ORM
-    const [created] = await db
-      .insert(urls)
-      .values({
-        id: newId,
-        userId: userId,
-        shortKey: shortKey,
-        originalUrl: original_url,
-        title: title || '',
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    // Pre-populate Valkey cache (<1ms subsequent lookups)
-    await setCachedUrl(shortKey, created.id, created.originalUrl);
-
+    const created = await UrlService.create(userId, original_url, title);
     const baseUrl = new URL(c.req.url).origin;
+
     return c.json(
       {
         id: created.id,
@@ -124,17 +81,11 @@ urlRouter.get('/urls/:id', async (c) => {
   const userId = c.get('userId');
 
   try {
-    const rows = await db
-      .select()
-      .from(urls)
-      .where(and(eq(urls.id, id), eq(urls.userId, userId)))
-      .limit(1);
-
-    if (rows.length === 0) {
+    const record = await UrlService.getById(id, userId);
+    if (!record) {
       return c.json({ error: 'URL not found' }, 404);
     }
 
-    const record = rows[0];
     const baseUrl = new URL(c.req.url).origin;
     return c.json({
       id: record.id,
@@ -157,19 +108,12 @@ urlRouter.get('/urls', async (c) => {
   const userId = c.get('userId');
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
   const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '20', 10)));
-  const offset = (page - 1) * limit;
 
   try {
-    const rows = await db
-      .select()
-      .from(urls)
-      .where(eq(urls.userId, userId))
-      .orderBy(desc(urls.createdAt))
-      .limit(limit)
-      .offset(offset);
-
+    const result = await UrlService.list(userId, page, limit);
     const baseUrl = new URL(c.req.url).origin;
-    const items = rows.map((r) => ({
+
+    const items = result.data.map((r) => ({
       id: r.id,
       short_key: r.shortKey,
       short_url: `${baseUrl}/${r.shortKey}`,
@@ -181,8 +125,8 @@ urlRouter.get('/urls', async (c) => {
 
     return c.json({
       data: items,
-      page,
-      limit,
+      page: result.page,
+      limit: result.limit,
       count: items.length,
     });
   } catch (err: unknown) {
@@ -197,34 +141,15 @@ urlRouter.delete('/urls/:id', async (c) => {
   const userId = c.get('userId');
 
   try {
-    const rows = await db
-      .delete(urls)
-      .where(and(eq(urls.id, id), eq(urls.userId, userId)))
-      .returning({ id: urls.id, shortKey: urls.shortKey });
-
-    if (rows.length === 0) {
+    const deleted = await UrlService.delete(id, userId);
+    if (!deleted) {
       return c.json({ error: 'URL not found or already deleted' }, 404);
-    }
-
-    // Invalidate caches in Valkey
-    await Promise.all([
-      purgeCacheKey(rows[0].shortKey),
-      purgeAnalyticsCache(rows[0].id),
-    ]);
-
-    // Clean up telemetry events in ClickHouse asynchronously
-    try {
-      await clickhouse.command({
-        query: `ALTER TABLE click_events DELETE WHERE url_id = '${rows[0].id}'`,
-      });
-    } catch (_err: unknown) {
-      // Non-fatal if ClickHouse cleanup encounters background mutation queue
     }
 
     return c.json({
       status: 'deleted',
-      id: rows[0].id,
-      short_key: rows[0].shortKey,
+      id: deleted.id,
+      short_key: deleted.shortKey,
     });
   } catch (err: unknown) {
     console.error('❌ [urlRouter.delete] Error deleting URL:', err instanceof Error ? err.message : err);

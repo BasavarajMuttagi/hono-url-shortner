@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from './types/env.js';
+import { env } from './config/env.js';
 import { setupAppMiddleware } from './middleware/app-middleware.js';
 import { rootRouter } from './routes/index.js';
 
@@ -15,7 +16,7 @@ app.onError((err, c) => {
   return c.json(
     {
       error: 'Internal Server Error',
-      message: err.message || 'An unexpected error occurred',
+      message: env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message || 'An unexpected error occurred',
       requestId: reqId,
     },
     500

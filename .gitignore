@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.mcp-use/
 
 # Production build output
 dist/

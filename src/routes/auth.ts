@@ -7,6 +7,7 @@ import { setCookie, deleteCookie } from 'hono/cookie';
 import crypto from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { db, users } from '../db/index.js';
+import { redis } from '../cache/redis.js';
 import { hashPassword, verifyPassword } from '../helpers/password.js';
 import { env } from '../config/env.js';
 import { authGuard } from '../middleware/auth.js';
@@ -198,5 +199,45 @@ authRouter.delete('/me', authGuard, async (c) => {
   } catch (err: unknown) {
     console.error('❌ [authRouter.deleteMe] Error deleting account:', err instanceof Error ? err.message : err);
     return c.json({ error: 'Internal server error deleting account' }, 500);
+  }
+});
+
+// 6. Rotate User API Key (POST /rotate-key)
+authRouter.post('/rotate-key', authGuard, async (c) => {
+  const userId = c.get('userId');
+
+  try {
+    const rows = await db
+      .select({ id: users.id, apiKey: users.apiKey })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (rows.length === 0) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    const oldApiKey = rows[0].apiKey;
+    const newApiKey = `key_${crypto.randomBytes(24).toString('hex')}`;
+
+    await db
+      .update(users)
+      .set({ apiKey: newApiKey })
+      .where(eq(users.id, userId));
+
+    try {
+      await redis.del(`auth:${oldApiKey}`);
+      await redis.set(`auth:${newApiKey}`, userId, 'EX', 3600);
+    } catch (cacheErr) {
+      console.warn('⚠️ [authRouter.rotateKey] Valkey cache sync warning:', cacheErr);
+    }
+
+    return c.json({
+      status: 'rotated',
+      api_key: newApiKey,
+    });
+  } catch (err: unknown) {
+    console.error('❌ [authRouter.rotateKey] Error rotating API key:', err instanceof Error ? err.message : err);
+    return c.json({ error: 'Internal server error rotating API key' }, 500);
   }
 });

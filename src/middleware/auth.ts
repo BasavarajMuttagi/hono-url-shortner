@@ -7,7 +7,7 @@ import { redis } from '../cache/redis.js';
 import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
-const COOKIE_NAME = 'auth_token';
+export const COOKIE_NAME = 'auth_token';
 
 /**
  * Unified Authentication Guard:
@@ -78,4 +78,77 @@ export const authGuard = createMiddleware<AppEnv>(async (c, next) => {
 
   c.set('userId', userId);
   await next();
+});
+
+/**
+ * Strict OAuth 2.1 MCP Authentication Guard:
+ * Strictly verifies Bearer token as an OAuth 2.1 scoped JWT access token.
+ * Rejects static API keys and ambient browser cookies to prevent session leakage and CSRF.
+ * Attaches RFC 9728 compliant WWW-Authenticate challenge header on failure.
+ */
+export const mcpAuthGuard = createMiddleware<AppEnv>(async (c, next) => {
+  const authHeader = c.req.header('Authorization');
+  let token: string | undefined;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  }
+
+  const sendUnauthorized = (errorDescription: string) => {
+    try {
+      const forwardedProto = c.req.header('x-forwarded-proto');
+      const forwardedHost = c.req.header('x-forwarded-host');
+      const host = forwardedHost || c.req.header('host');
+      const isLocal = host && (host.includes('localhost') || host.includes('127.0.0.1'));
+      const proto = forwardedProto || (isLocal ? 'http' : 'https');
+      const origin = host ? `${proto}://${host}` : new URL(c.req.url).origin;
+
+      c.header(
+        'WWW-Authenticate',
+        `Bearer realm="MCP", resource_metadata="${origin}/.well-known/oauth-protected-resource", error="invalid_token", error_description="${errorDescription}"`
+      );
+    } catch {
+      c.header('WWW-Authenticate', 'Bearer realm="MCP"');
+    }
+    return c.json({ error: 'invalid_token', error_description: errorDescription }, 401);
+  };
+
+  // Reject missing Bearer token
+  if (!token) {
+    return sendUnauthorized('Missing OAuth 2.1 Bearer access token');
+  }
+
+  // Strictly verify as signed OAuth 2.1 JWT Access Token (Reject raw API keys)
+  try {
+    const payload = await verify(token, env.JWT_SECRET, 'HS256');
+    if (payload && payload.sub) {
+      // Validate scope strictly contains mcp:tools
+      const rawScope = typeof payload.scope === 'string' ? payload.scope : '';
+      const scopes = rawScope.split(/\s+/).filter(Boolean);
+      if (!scopes.includes('mcp:tools')) {
+        return c.json({ error: 'insufficient_scope', error_description: 'Token missing required mcp:tools scope' }, 403);
+      }
+
+      // If client_id is present, verify that the user's OAuth grant has not been revoked
+      if (payload.client_id) {
+        try {
+          const grant = await redis.get(`oauth_grant:${payload.sub}:${payload.client_id}`);
+          if (!grant) {
+            return sendUnauthorized('Access token has been revoked');
+          }
+        } catch (grantErr) {
+          console.warn('⚠️ [mcpAuthGuard] Valkey grant check warning:', grantErr);
+        }
+      }
+
+      c.set('userId', String(payload.sub));
+      c.set('userEmail', String(payload.email || ''));
+      await next();
+      return;
+    }
+  } catch (_err: unknown) {
+    // Signature verification failure or expired token
+  }
+
+  return sendUnauthorized('Invalid or expired OAuth 2.1 Bearer access token');
 });

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { swaggerUI } from '@hono/swagger-ui';
+import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
 export const docsRouter = new Hono<AppEnv>();
@@ -207,5 +208,11 @@ const openApiSpec = {
   },
 };
 
-docsRouter.get('/docs/openapi.json', (c) => c.json(openApiSpec));
-docsRouter.get('/docs', swaggerUI({ url: '/docs/openapi.json' }));
+// Swagger UI & OpenAPI Specification (strictly disabled in production)
+if (env.NODE_ENV !== 'production') {
+  docsRouter.get('/docs/openapi.json', (c) => c.json(openApiSpec));
+  docsRouter.get('/docs', swaggerUI({ url: '/docs/openapi.json' }));
+} else {
+  docsRouter.all('/docs', (c) => c.text('Not Found', 404));
+  docsRouter.all('/docs/*', (c) => c.text('Not Found', 404));
+}
