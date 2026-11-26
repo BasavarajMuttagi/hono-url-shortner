@@ -122,14 +122,19 @@ export const mcpAuthGuard = createMiddleware<AppEnv>(async (c, next) => {
   try {
     const payload = await verify(token, env.JWT_SECRET, 'HS256');
     if (payload && payload.sub) {
-      // Validate scope strictly contains mcp:tools
+      // Validate scope strictly contains mcp:tools (RFC 6750 Section 3)
       const rawScope = typeof payload.scope === 'string' ? payload.scope : '';
       const scopes = rawScope.split(/\s+/).filter(Boolean);
       if (!scopes.includes('mcp:tools')) {
+        c.header(
+          'WWW-Authenticate',
+          'Bearer error="insufficient_scope", error_description="Token missing required mcp:tools scope", scope="mcp:tools"'
+        );
         return c.json({ error: 'insufficient_scope', error_description: 'Token missing required mcp:tools scope' }, 403);
       }
 
-      // If client_id is present, verify that the user's OAuth grant has not been revoked
+      // If client_id is present, verify that the user's OAuth grant has not been revoked.
+      // Strict Zero-Trust Posture: Fail-closed on revocation store outage to prevent honoring revoked grants.
       if (payload.client_id) {
         try {
           const grant = await redis.get(`oauth_grant:${payload.sub}:${payload.client_id}`);
@@ -137,7 +142,14 @@ export const mcpAuthGuard = createMiddleware<AppEnv>(async (c, next) => {
             return sendUnauthorized('Access token has been revoked');
           }
         } catch (grantErr) {
-          console.warn('⚠️ [mcpAuthGuard] Valkey grant check warning:', grantErr);
+          console.error('❌ [mcpAuthGuard] Valkey grant check error (failing closed for security):', grantErr);
+          return c.json(
+            {
+              error: 'temporarily_unavailable',
+              error_description: 'Authentication verification service is temporarily unreachable',
+            },
+            503
+          );
         }
       }
 

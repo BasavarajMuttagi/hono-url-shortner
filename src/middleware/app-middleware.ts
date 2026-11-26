@@ -24,7 +24,7 @@ export function setupAppMiddleware(app: Hono<AppEnv>): void {
   // 3. Server-Timing headers (durations for cache, db, etc.)
   app.use('*', timing());
 
-  // 3. Security headers (HSTS, nosniff, etc. Configured for OAuth popup compatibility)
+  // 4. Security headers (HSTS, nosniff, etc. Configured for OAuth popup compatibility)
   app.use(
     '*',
     secureHeaders({
@@ -34,27 +34,40 @@ export function setupAppMiddleware(app: Hono<AppEnv>): void {
     })
   );
 
-  // 4. Cross-Origin Resource Sharing
+  // 5. Cross-Origin Resource Sharing (includes MCP headers & OAuth metadata)
   app.use(
     '*',
     cors({
       origin: '*',
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
-      exposeHeaders: ['Server-Timing', 'ETag', 'X-Request-Id'],
+      allowHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Request-Id',
+        'Mcp-Session-Id',
+        'Cache-Control',
+        'Accept',
+      ],
+      exposeHeaders: [
+        'Server-Timing',
+        'ETag',
+        'X-Request-Id',
+        'Mcp-Session-Id',
+        'WWW-Authenticate',
+      ],
     })
   );
 
-  // 5. Response compression (gzip / deflate)
+  // 6. Response compression (gzip / deflate)
   app.use('*', compress());
 
-  // 6. Pretty JSON support with ?pretty
+  // 7. Pretty JSON support with ?pretty
   app.use('*', prettyJSON());
 
-  // 7. Strip trailing slashes
+  // 8. Strip trailing slashes
   app.use('*', trimTrailingSlash());
 
-  // 8. Body payload size guard (16KB max payload)
+  // 9. Body payload size guard (16KB max payload)
   app.use(
     '*',
     bodyLimit({
@@ -63,6 +76,12 @@ export function setupAppMiddleware(app: Hono<AppEnv>): void {
     })
   );
 
-  // 9. Timeout deadline (3 seconds)
-  app.use('*', timeout(3000));
+  // 10. Timeout deadline (3s for high-throughput redirect/API routes; 30s for MCP streaming & ClickHouse OLAP)
+  app.use('*', async (c, next) => {
+    const path = c.req.path;
+    if (path.startsWith('/mcp') || path.startsWith('/api/v1/analytics')) {
+      return timeout(30000)(c, next);
+    }
+    return timeout(3000)(c, next);
+  });
 }

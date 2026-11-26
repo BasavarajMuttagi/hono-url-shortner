@@ -126,6 +126,9 @@ describe('Strict OAuth 2.1 MCP Server & Security Tests', () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toBe('insufficient_scope');
+    const wwwAuth = res.headers.get('www-authenticate') || '';
+    expect(wwwAuth).toContain('error="insufficient_scope"');
+    expect(wwwAuth).toContain('scope="mcp:tools"');
   });
 
   it('should list available MCP tools for an authenticated OAuth 2.1 Bearer token', async () => {
@@ -217,6 +220,35 @@ describe('Strict OAuth 2.1 MCP Server & Security Tests', () => {
     const text = await res.text();
     expect(text).toContain('docs.mcp-use.com');
     expect(text).toContain(createdShortKey);
+  });
+
+  it('should execute list_my_urls tool returning total and has_more pagination metadata', async () => {
+    const res = await app.request('/mcp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Authorization': `Bearer ${oauthToken}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: {
+          name: 'list_my_urls',
+          arguments: {
+            page: 1,
+            limit: 5,
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('total');
+    expect(text).toContain('has_more');
+    expect(text).toContain('limit');
   });
 
   it('should execute delete_url tool via OAuth 2.1 authenticated MCP protocol', async () => {

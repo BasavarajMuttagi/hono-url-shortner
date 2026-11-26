@@ -128,6 +128,8 @@ urlRouter.get('/urls', async (c) => {
       page: result.page,
       limit: result.limit,
       count: items.length,
+      total: result.total,
+      has_more: result.hasMore,
     });
   } catch (err: unknown) {
     console.error('❌ [urlRouter.list] Error listing user URLs:', err instanceof Error ? err.message : err);

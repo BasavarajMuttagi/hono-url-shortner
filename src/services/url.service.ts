@@ -1,4 +1,4 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, count } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { db, urls } from '../db/index.js';
 import { setCachedUrl, purgeCacheKey, purgeAnalyticsCache } from '../cache/redis.js';
@@ -10,6 +10,17 @@ export class UrlService {
    * Generates a collision-resistant 7-character Base62 key and creates a shortened URL.
    */
   static async create(userId: string, originalUrl: string, title?: string) {
+    // Validate destination URL format and protocol (strictly http:// or https://)
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(originalUrl);
+    } catch {
+      throw new Error('Invalid URL format: destination must be a well-formed absolute URL');
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new Error('Invalid URL protocol: destination URL must start with http:// or https://');
+    }
+
     let shortKey = '';
     let attempts = 0;
 
@@ -87,26 +98,45 @@ export class UrlService {
   }
 
   /**
-   * Retrieves paginated URLs for a given user.
+   * Resolves a URL record by either shortKey slug or UUID ID, verifying user ownership.
+   */
+  static async resolveIdentifier(identifier: string, userId: string) {
+    const byShortKey = await this.getByShortKey(identifier, userId);
+    if (byShortKey) return byShortKey;
+    return this.getById(identifier, userId);
+  }
+
+  /**
+   * Retrieves paginated URLs for a given user with complete total and hasMore metadata.
    */
   static async list(userId: string, page = 1, limit = 20) {
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(100, Math.max(1, limit));
     const offset = (safePage - 1) * safeLimit;
 
-    const rows = await db
-      .select()
-      .from(urls)
-      .where(eq(urls.userId, userId))
-      .orderBy(desc(urls.createdAt))
-      .limit(safeLimit)
-      .offset(offset);
+    const [rows, [totalResult]] = await Promise.all([
+      db
+        .select()
+        .from(urls)
+        .where(eq(urls.userId, userId))
+        .orderBy(desc(urls.createdAt))
+        .limit(safeLimit)
+        .offset(offset),
+      db
+        .select({ total: count() })
+        .from(urls)
+        .where(eq(urls.userId, userId)),
+    ]);
+
+    const total = Number(totalResult?.total || 0);
 
     return {
       data: rows,
       page: safePage,
       limit: safeLimit,
       count: rows.length,
+      total,
+      hasMore: offset + rows.length < total,
     };
   }
 

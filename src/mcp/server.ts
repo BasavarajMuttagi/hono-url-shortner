@@ -1,21 +1,114 @@
-import { MCPServer } from 'mcp-use';
+import { MCPServer, type RequestContext } from 'mcp-use';
+import {
+  oauthCustomProvider,
+  OAuthError,
+  OAuthErrorCode,
+  type OAuthAuthInfo,
+  type OAuthMetadata,
+} from 'mcp-use/oauth';
 import { fromJsonSchema } from '@modelcontextprotocol/server';
-import { mcpAuthGuard } from '../middleware/auth.js';
+import { verify } from 'hono/jwt';
+import { redis } from '../cache/redis.js';
 import { UrlService } from '../services/url.service.js';
 import { AnalyticsService } from '../services/analytics.service.js';
 import { env } from '../config/env.js';
 import type { AppEnv } from '../types/env.js';
 
-export const mcpServer = new MCPServer<never, AppEnv>({
+export interface AppUser {
+  id: string;
+  email?: string;
+}
+
+function resolveServerOrigin(): string {
+  if (process.env.MCP_URL) return process.env.MCP_URL;
+  if (env.BASE_URL.startsWith('http://') || env.BASE_URL.startsWith('https://')) {
+    return env.BASE_URL;
+  }
+  return `http://localhost:${env.PORT || 8080}`;
+}
+
+const serverOrigin = resolveServerOrigin();
+const canonicalResource = new URL('/mcp', serverOrigin);
+const issuer = serverOrigin;
+
+const oauthMetadata = {
+  issuer,
+  authorization_endpoint: `${issuer}/oauth/authorize`,
+  token_endpoint: `${issuer}/oauth/token`,
+  registration_endpoint: `${issuer}/oauth/register`,
+  response_types_supported: ['code'],
+  grant_types_supported: ['authorization_code'],
+  code_challenge_methods_supported: ['S256'],
+  scopes_supported: ['mcp:tools'],
+} satisfies OAuthMetadata;
+
+export const mcpServer = new MCPServer<AppUser, AppEnv>({
   name: 'hono-url-shortener',
   version: '1.0.0',
+  oauth: oauthCustomProvider<AppUser>({
+    resource: canonicalResource,
+    requiredScopes: ['mcp:tools'],
+    scopesSupported: ['mcp:tools'],
+    oauthMetadata,
+    createTokenVerifier(resource) {
+      return {
+        async verifyAccessToken(token: string): Promise<OAuthAuthInfo> {
+          try {
+            const payload = await verify(token, env.JWT_SECRET, 'HS256');
+
+            if (!payload || !payload.sub || typeof payload.sub !== 'string') {
+              throw new OAuthError(OAuthErrorCode.InvalidToken, 'Missing subject claim in token');
+            }
+
+            const rawScope = typeof payload.scope === 'string' ? payload.scope : '';
+            const scopes = rawScope.split(/\s+/).filter(Boolean);
+
+            if (payload.client_id) {
+              try {
+                const grant = await redis.get(`oauth_grant:${payload.sub}:${payload.client_id}`);
+                if (!grant) {
+                  throw new OAuthError(OAuthErrorCode.InvalidToken, 'Access token has been revoked');
+                }
+              } catch (grantErr) {
+                if (grantErr instanceof OAuthError) throw grantErr;
+                throw new OAuthError(
+                  OAuthErrorCode.InvalidToken,
+                  'Authentication verification service temporarily unreachable'
+                );
+              }
+            }
+
+            return {
+              token,
+              clientId: (payload.client_id as string) || '',
+              scopes,
+              expiresAt: typeof payload.exp === 'number' ? payload.exp : Math.floor(Date.now() / 1000) + 3600,
+              resource,
+              extra: { payload },
+            };
+          } catch (err) {
+            if (err instanceof OAuthError) throw err;
+            throw new OAuthError(OAuthErrorCode.InvalidToken, 'Invalid or expired Bearer token');
+          }
+        },
+      };
+    },
+    mapAuthInfo(authInfo: OAuthAuthInfo) {
+      const payload = authInfo.extra?.payload as Record<string, unknown>;
+      return {
+        user: {
+          id: String(payload.sub),
+          email: typeof payload.email === 'string' ? payload.email : undefined,
+        },
+        payload,
+        permissions: [],
+      };
+    },
+  }),
 });
 
-// Protect all MCP protocol operations with strict Bearer token authentication (cookies rejected)
-mcpServer.app.use('*', mcpAuthGuard);
-
 /**
- * Standard MCP 2026 wire response helpers (avoids deprecated wrapper functions).
+ * Standard MCP wire response helpers.
  */
 function textResult(content: string) {
   return {
@@ -33,13 +126,35 @@ function errorResult(message: string) {
 /**
  * Resolves the public base URL using request headers or falls back to env.BASE_URL.
  */
-function resolveBaseUrl(ctx: { request?: { header: (name: string) => string | undefined } }): string {
+function resolveBaseUrl(ctx: RequestContext<AppUser, true, AppEnv>): string {
   const host = ctx.request?.header('host');
   if (host) {
     const proto = ctx.request?.header('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
     return `${proto}://${host}`;
   }
   return env.BASE_URL;
+}
+
+/**
+ * Type-safe tool registration helper using native RequestContext with authenticated AppUser.
+ */
+function registerTypedTool<TArgs>(
+  name: string,
+  description: string,
+  schema: Parameters<typeof fromJsonSchema>[0],
+  handler: (
+    args: TArgs,
+    ctx: RequestContext<AppUser, true, AppEnv>
+  ) => Promise<ReturnType<typeof textResult> | ReturnType<typeof errorResult>>
+) {
+  mcpServer.tool(
+    {
+      name,
+      description,
+      inputSchema: fromJsonSchema(schema),
+    },
+    async (args, ctx) => handler(args as TArgs, ctx as unknown as RequestContext<AppUser, true, AppEnv>)
+  );
 }
 
 // Type definitions for tool input schemas
@@ -58,32 +173,26 @@ interface ListUrlsInput {
 }
 
 // 1. Tool: shorten_url
-mcpServer.tool(
+registerTypedTool<ShortenUrlInput>(
+  'shorten_url',
+  'Creates a collision-resistant shortened URL for a long destination link',
   {
-    name: 'shorten_url',
-    description: 'Creates a collision-resistant shortened URL for a long destination link',
-    inputSchema: fromJsonSchema({
-      type: 'object',
-      properties: {
-        original_url: {
-          type: 'string',
-          description: 'The destination URL to shorten (must start with http:// or https://)',
-        },
-        title: {
-          type: 'string',
-          description: 'Optional label or title for the shortened URL',
-        },
+    type: 'object',
+    properties: {
+      original_url: {
+        type: 'string',
+        pattern: '^https?://',
+        description: 'The destination URL to shorten (must start with http:// or https://)',
       },
-      required: ['original_url'],
-    }),
+      title: {
+        type: 'string',
+        description: 'Optional label or title for the shortened URL',
+      },
+    },
+    required: ['original_url'],
   },
-  async (args, ctx) => {
-    const { original_url, title } = args as unknown as ShortenUrlInput;
-    const userId = ctx.get('userId') as string | undefined;
-
-    if (!userId) {
-      return errorResult('Unauthorized: Missing user authentication context');
-    }
+  async ({ original_url, title }, ctx) => {
+    const userId = ctx.auth.user.id;
 
     try {
       const created = await UrlService.create(userId, original_url, title);
@@ -112,33 +221,26 @@ mcpServer.tool(
 );
 
 // 2. Tool: list_my_urls
-mcpServer.tool(
+registerTypedTool<ListUrlsInput>(
+  'list_my_urls',
+  'Lists recently created shortened URLs owned by the authenticated user',
   {
-    name: 'list_my_urls',
-    description: 'Lists recently created shortened URLs owned by the authenticated user',
-    inputSchema: fromJsonSchema({
-      type: 'object',
-      properties: {
-        page: {
-          type: 'integer',
-          description: 'Page number (default 1)',
-          default: 1,
-        },
-        limit: {
-          type: 'integer',
-          description: 'Number of records per page (default 10, max 50)',
-          default: 10,
-        },
+    type: 'object',
+    properties: {
+      page: {
+        type: 'integer',
+        description: 'Page number (default 1)',
+        default: 1,
       },
-    }),
+      limit: {
+        type: 'integer',
+        description: 'Number of records per page (default 10, max 50)',
+        default: 10,
+      },
+    },
   },
-  async (args, ctx) => {
-    const { page, limit } = args as ListUrlsInput;
-    const userId = ctx.get('userId') as string | undefined;
-
-    if (!userId) {
-      return errorResult('Unauthorized: Missing user authentication context');
-    }
+  async ({ page, limit }, ctx) => {
+    const userId = ctx.auth.user.id;
 
     try {
       const result = await UrlService.list(userId, page, limit);
@@ -158,7 +260,10 @@ mcpServer.tool(
           {
             data: items,
             page: result.page,
+            limit: result.limit,
             count: items.length,
+            total: result.total,
+            has_more: result.hasMore,
           },
           null,
           2
@@ -171,35 +276,24 @@ mcpServer.tool(
 );
 
 // 3. Tool: get_url_details
-mcpServer.tool(
+registerTypedTool<UrlIdentifierInput>(
+  'get_url_details',
+  'Retrieves destination metadata and details for a shortened URL by its short key slug or UUID ID',
   {
-    name: 'get_url_details',
-    description: 'Retrieves destination metadata and details for a shortened URL by its short key slug or UUID ID',
-    inputSchema: fromJsonSchema({
-      type: 'object',
-      properties: {
-        identifier: {
-          type: 'string',
-          description: 'The short slug (e.g. "aB3x9Zq") or URL UUID ID',
-        },
+    type: 'object',
+    properties: {
+      identifier: {
+        type: 'string',
+        description: 'The short slug (e.g. "aB3x9Zq") or URL UUID ID',
       },
-      required: ['identifier'],
-    }),
+    },
+    required: ['identifier'],
   },
-  async (args, ctx) => {
-    const { identifier } = args as unknown as UrlIdentifierInput;
-    const userId = ctx.get('userId') as string | undefined;
-
-    if (!userId) {
-      return errorResult('Unauthorized: Missing user authentication context');
-    }
+  async ({ identifier }, ctx) => {
+    const userId = ctx.auth.user.id;
 
     try {
-      // Try resolving by shortKey first, then by UUID
-      let record = await UrlService.getByShortKey(identifier, userId);
-      if (!record && identifier.length > 20) {
-        record = await UrlService.getById(identifier, userId);
-      }
+      const record = await UrlService.resolveIdentifier(identifier, userId);
 
       if (!record) {
         return errorResult(`Short URL "${identifier}" not found or unauthorized for this account`);
@@ -228,28 +322,21 @@ mcpServer.tool(
 );
 
 // 4. Tool: get_url_analytics
-mcpServer.tool(
+registerTypedTool<UrlIdentifierInput>(
+  'get_url_analytics',
+  'Queries ClickHouse OLAP analytics for a short URL (total clicks, unique visitors, top countries, referrers, devices, browsers)',
   {
-    name: 'get_url_analytics',
-    description: 'Queries ClickHouse OLAP analytics for a short URL (total clicks, unique visitors, top countries, referrers, devices, browsers)',
-    inputSchema: fromJsonSchema({
-      type: 'object',
-      properties: {
-        identifier: {
-          type: 'string',
-          description: 'The short slug (e.g. "aB3x9Zq") or URL UUID ID',
-        },
+    type: 'object',
+    properties: {
+      identifier: {
+        type: 'string',
+        description: 'The short slug (e.g. "aB3x9Zq") or URL UUID ID',
       },
-      required: ['identifier'],
-    }),
+    },
+    required: ['identifier'],
   },
-  async (args, ctx) => {
-    const { identifier } = args as unknown as UrlIdentifierInput;
-    const userId = ctx.get('userId') as string | undefined;
-
-    if (!userId) {
-      return errorResult('Unauthorized: Missing user authentication context');
-    }
+  async ({ identifier }, ctx) => {
+    const userId = ctx.auth.user.id;
 
     try {
       const stats = await AnalyticsService.getMetrics(identifier, userId);
@@ -265,41 +352,29 @@ mcpServer.tool(
 );
 
 // 5. Tool: delete_url
-mcpServer.tool(
+registerTypedTool<UrlIdentifierInput>(
+  'delete_url',
+  'Deletes a shortened URL, revokes its redirect, and purges it from cache and analytics',
   {
-    name: 'delete_url',
-    description: 'Deletes a shortened URL, revokes its redirect, and purges it from cache and analytics',
-    inputSchema: fromJsonSchema({
-      type: 'object',
-      properties: {
-        identifier: {
-          type: 'string',
-          description: 'The short slug (e.g. "aB3x9Zq") or URL UUID ID to delete',
-        },
+    type: 'object',
+    properties: {
+      identifier: {
+        type: 'string',
+        description: 'The short slug (e.g. "aB3x9Zq") or URL UUID ID to delete',
       },
-      required: ['identifier'],
-    }),
+    },
+    required: ['identifier'],
   },
-  async (args, ctx) => {
-    const { identifier } = args as unknown as UrlIdentifierInput;
-    const userId = ctx.get('userId') as string | undefined;
-
-    if (!userId) {
-      return errorResult('Unauthorized: Missing user authentication context');
-    }
+  async ({ identifier }, ctx) => {
+    const userId = ctx.auth.user.id;
 
     try {
-      // Resolve UUID if identifier was provided as shortKey
-      let targetId = identifier;
-      if (identifier.length <= 12) {
-        const record = await UrlService.getByShortKey(identifier, userId);
-        if (!record) {
-          return errorResult(`URL with slug "${identifier}" not found or unauthorized`);
-        }
-        targetId = record.id;
+      const existing = await UrlService.resolveIdentifier(identifier, userId);
+      if (!existing) {
+        return errorResult(`URL "${identifier}" not found or unauthorized`);
       }
 
-      const deleted = await UrlService.delete(targetId, userId);
+      const deleted = await UrlService.delete(existing.id, userId);
       if (!deleted) {
         return errorResult(`URL "${identifier}" not found or unauthorized`);
       }
